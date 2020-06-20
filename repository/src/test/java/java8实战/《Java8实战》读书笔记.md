@@ -143,3 +143,153 @@ andThen方法会返回一个函数，它先对输入应用一个给定函数，�
 
 你也可以类似地使用compose方法，先把给定的函数用作compose的参数里面给的那个函数，然后再把函数本身用于结果。比如在上一个例子里用compose的话，它将意味着f(g(x))，而andThen则意味着g(f(x))
 
+## 第4章 引入流
+
+### 4.3.1 只能遍历一次
+
+请注意，和迭代器类似，流只能遍历一次。遍历完之后，我们就说这个流已经被消费掉了。你可以从原始数据源那里再获得一个新的流来重新遍历一遍，就像迭代器一样（这里假设它是集合之类的可重复的源，如果是I/O通道就没戏了）。例如，以下代码会抛出一个异常，说流已被消费掉了：
+~~~java
+List<String> title = Arrays.asList("Java8", "In", "Action");
+Stream<String> s = title.stream();
+s.forEach(System.out::println);
+s.forEach(System.out::println); // java.lang.IllegalStateException: 流已被操作或关闭
+~~~
+所以要记得，流只能消费一次！
+
+## 第5章 使用流
+
+### 5.1 筛选和切片：
+
+5.1.1 用谓词筛选：Streams接口支持filter方法（你现在应该很熟悉了）。该操作会接受一个谓词（一个返回boolean的函数）作为参数，并返回一个包括所有符合谓词的元素的流。
+
+5.1.2 筛选各异的元素：流还支持一个叫作distinct的方法，它会返回一个元素各异（根据流所生成元素的 hashCode和equals方法实现）的流。
+
+5.1.3 截短流：流支持limit(n)方法，该方法会返回一个不超过给定长度的流。所需的长度作为参数传递给limit。如果流是有序的，则最多会返回前n个元素。请注意limit也可以用在无序流上，比如源是一个Set。这种情况下， limit的结果不会以任何顺序排列。
+
+5.1.4 跳过元素：流还支持skip(n)方法，返回一个扔掉了前n个元素的流。如果流中元素不足n个，则返回一个空流。请注意， limit(n)和skip(n)是互补的！
+
+### 5.2 映射
+
+5.2.1 对流中每一个元素应用函数：流支持map方法，它会接受一个函数作为参数。这个函数会被应用到每个元素上，并将其映射成一个新的元素（使用映射一词，是因为它和转换类似，但其中的细微差别在于它是“创建一个新版本”而不是去“修改”）
+
+如果你要找出每道菜的名称有多长，怎么做？你可以像下面这样，再链接上一个map：
+
+~~~java
+List<Integer> dishNameLengths = menu.stream()
+    .map(Dish::getName)
+    .map(String::length)
+    .collect(toList());
+~~~
+
+5.2.2 流的扁平化：使用flatMap方法的效果是，各个数组并不是分别映射成一个流，而是映射成流的内容。所有使用map(Arrays::stream)时生成的单个流都被合并起来，即扁平化为一个流。
+
+### 5.3 查找和匹配
+
+5.3.1 检查谓词是否至少匹配一个元素：anyMatch方法可以回答“流中是否有一个元素能匹配给定的谓词”。
+
+5.3.2 检查谓词是否匹配所有元素：allMatch方法的工作原理和anyMatch类似，但它会看看流中的元素是否都能匹配给定的谓词。和allMatch相对的是noneMatch。它可以确保流中没有任何元素与给定的谓词匹配。
+
+anyMatch、 allMatch和noneMatch这三个操作都用到了我们所谓的短路，这就是大家熟悉的Java中&&和||运算符短路在流中的版本。
+
+5.3.3 查找元素：findAny方法将返回当前流中的任意元素。它可以与其他流操作结合使用。
+
+~~~java
+Optional<Dish> dish =
+    menu.stream()
+    .filter(Dish::isVegetarian)
+    .findAny();
+~~~
+Optional<T>类（ java.util.Optional）是一个容器类，代表一个值存在或不存在。在上面的代码中， findAny可能什么元素都没找到。 Java 8的库设计人员引入了Optional<T>，这样就不用返回众所周知容易出问题的null了。
+
+Optional里面几种可以迫使你显式地检查值是否存在或处理值不存在的情形的方法也不错。
+ isPresent()将在Optional包含值的时候返回true, 否则返回false。
+ ifPresent(Consumer<T> block)会在值存在的时候执行给定的代码块。我们在第3章介绍了Consumer函数式接口；它让你传递一个接收T类型参数，并返回void的Lambda表达式。
+ T get()会在值存在时返回值，否则抛出一个NoSuchElement异常。
+ T orElse(T other)会在值存在时返回值，否则返回一个默认值。
+
+例如，在前面的代码中你需要显式地检查Optional对象中是否存在一道菜可以访问其名称：
+~~~java
+menu.stream()
+    .filter(Dish::isVegetarian)
+    .findAny()
+    .ifPresent(d -> System.out.println(d.getName());
+~~~
+
+5.3.4 查找第一个元素：有些流有一个出现顺序（ encounter order）来指定流中项目出现的逻辑顺序（比如由List或排序好的数据列生成的流）。对于这种流，你可能想要找到第一个元素。为此有一个findFirst方法，它的工作方式类似于findAny。
+
+何时使用findFirst和findAny
+
+你可能会想，为什么会同时有findFirst和findAny呢？答案是并行。找到第一个元素在并行上限制更多。如果你不关心返回的元素是哪个，请使用findAny，因为它在使用并行流时限制较少。
+
+### 5.4 规约
+
+到目前为止，你见到过的终端操作都是返回一个boolean（ allMatch之类的）、 void（ forEach）或Optional对象（ findAny等）。你也见过了使用collect来将流中的所有元素组合成一个List。
+
+在本节中，你将看到如何把一个流中的元素组合起来，使用reduce操作来表达更复杂的查询，比如“计算菜单中的总卡路里”或“菜单中卡路里最高的菜是哪一个”。此类查询需要将流中所有元素反复结合起来，得到一个值，比如一个Integer。这样的查询可以被归类为归约操作（将流归约成一个值）。用函数式编程语言的术语来说，这称为折叠(fold），因为你可以将这个操作看成把一张长长的纸（你的流）反复折叠成一个小方块，而这就是折叠操作的结果。
+
+你可以像下面这样对流中所有的元素求和：
+~~~java
+int sum = numbers.stream().reduce(0, (a, b) -> a + b);
+~~~
+你也很容易把所有的元素相乘，只需要将另一个Lambda： (a, b) -> a * b传递给reduce操作就可以了：
+~~~java
+int product = numbers.stream().reduce(1, (a, b) -> a * b);
+~~~
+你可以使用方法引用让这段代码更简洁。在Java 8中， Integer类现在有了一个静态的sum方法来对两个数求和，这恰好是我们想要的，用不着反复用Lambda写同一段代码了：
+~~~java
+int sum = numbers.stream().reduce(0, Integer::sum);
+~~~
+reduce还有一个重载的变体，它不接受初始值，但是会返回一个Optional对象：
+~~~java
+Optional<Integer> sum = numbers.stream().reduce((a, b) -> (a + b));
+~~~
+为什么它返回一个Optional<Integer>呢？考虑流中没有任何元素的情况。 reduce操作无法返回其和，因为它没有初始值。这就是为什么结果被包裹在一个Optional对象里，以表明和可能不存在。
+
+你可以像下面这样使用reduce来计算流中的最大值:
+~~~java
+Optional<Integer> max = numbers.stream().reduce(Integer::max);
+~~~
+要计算最小值，你需要把Integer.min传给reduce来替换Integer.max：
+~~~java
+Optional<Integer> min = numbers.stream().reduce(Integer::min);
+~~~
+
+**归约方法的优势与并行化**
+
+相比于前面写的逐步迭代求和，使用reduce的好处在于，这里的迭代被内部迭代抽象掉了，这让内部实现得以选择并行执行reduce操作。而迭代式求和例子要更新共享变量sum，这不是那么容易并行化的。如果你加入了同步，很可能会发现线程竞争抵消了并行本应带来的性能提升！这种计算的并行化需要另一种办法：将输入分块，分块求和，最后再合并起来。但这样的话代码看起来就完全不一样了。你在第7章会看到使用分支/合并框架来做是什么样子。但现在重要的是要认识到，可变的累加器模式对于并行化来说是死路一条。你需要一种新的模式，这正是reduce所提供的。你还将在第7章看到，使用流来对所有的元素并行求和时，你的代码几乎不用修改： stream()换成了parallelStream()。
+~~~java
+int sum = numbers.parallelStream().reduce(0, Integer::sum);
+~~~
+但要并行执行这段代码也要付一定代价，我们稍后会向你解释：传递给reduce的Lambda不能更改状态（如实例变量），而且操作必须满足结合律才可以按任意顺序执行。
+
+**流操作：无状态和有状态**
+
+你已经看到了很多的流操作。乍一看流操作简直是灵丹妙药，而且只要在从集合生成流的时候把Stream换成parallelStream就可以实现并行。
+
+当然，对于许多应用来说确实是这样，就像前面的那些例子。你可以把一张菜单变成流，用filter选出某一类的菜肴，然后对得到的流做map来对卡路里求和，最后reduce得到菜单的总热量。这个流计算甚至可以并行进行。但这些操作的特性并不相同。它们需要操作的内部状态还是有些问题的。
+
+诸如map或filter等操作会从输入流中获取每一个元素，并在输出流中得到0或1个结果。这些操作一般都是**无状态**的：它们没有内部状态（假设用户提供的Lambda或方法引用没有内部可变状态）。
+
+但诸如reduce、 sum、 max等操作需要内部状态来累积结果。在上面的情况下，内部状态很小。在我们的例子里就是一个int或double。不管流中有多少元素要处理，内部状态都是有界的。
+
+相反，诸如sort或distinct等操作一开始都和filter和map差不多——都是接受一个流，再生成一个流（中间操作），但有一个关键的区别。从流中排序和删除重复项时都需要知道先前的历史。例如，排序要求所有元素都放入缓冲区后才能给输出流加入一个项目，这一操作的存储要求是无界的。要是流比较大或是无限的，就可能会有问题（把质数流倒序会做什么呢？它应当返回最大的质数，但数学告诉我们它不存在）。我们把这些操作叫作**有状态操作**。
+
+| 操作      | 类型              | 返回类型    | 使用的类型/函数式接口  | 函数描述符     |
+| --------- | ----------------- | ----------- | ---------------------- | -------------- |
+| filter    | 中间              | Stream<T>   | Predicate<T>           | T -> boolean   |
+| distinct  | 中间(有状态-无界) | Stream<T>   |                        |                |
+| skip      | 中间(有状态-有界) | Stream<T>   | long                   |                |
+| limit     | 中间(有状态-有界) | Stream<T>   | long                   |                |
+| map       | 中间              | Stream<R>   | Function<T, R>         | T -> R         |
+| flatMap   | 中间              | Stream<R>   | Function<T, Stream<R>> | T -> Stream<R> |
+| sorted    | 中间(有状态-无界) | Stream<T>   | Comparator<T>          | (T, T) -> int  |
+| anyMatch  | 终端              | boolean     | Predicate<T>           | T -> boolean   |
+| noneMatch | 终端              | boolean     | Predicate<T>           | T -> boolean   |
+| allMatch  | 终端              | boolean     | Predicate<T>           | T -> boolean   |
+| findAny   | 终端              | Optional<T> |                        |                |
+| findFirst | 终端              | Optional<T> |                        |                |
+| forEach   | 终端              | void        | Consumer<T>            | T -> void      |
+| collect   | 终端              | R           | Collector<T, A, R>     |                |
+| reduce    | 终端(有状态-有界) | Optional<T> | BinaryOperator<T>      | (T, T) -> T    |
+| count     | 终端              | long        |                        |                |
+

@@ -1,4 +1,4 @@
-package X_20200617_重新建立repo的第一天;
+package 每日练习.X_20200617_重新建立repo的第一天;
 
 public class X_20200617_HelloWorld {
     public static void main(String[] args) {

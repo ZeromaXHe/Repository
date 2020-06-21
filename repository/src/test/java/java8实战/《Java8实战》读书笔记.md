@@ -199,11 +199,11 @@ Optional<Dish> dish =
     .filter(Dish::isVegetarian)
     .findAny();
 ~~~
-Optional<T>类（ java.util.Optional）是一个容器类，代表一个值存在或不存在。在上面的代码中， findAny可能什么元素都没找到。 Java 8的库设计人员引入了Optional<T>，这样就不用返回众所周知容易出问题的null了。
+Optional\<T>类（ java.util.Optional）是一个容器类，代表一个值存在或不存在。在上面的代码中， findAny可能什么元素都没找到。 Java 8的库设计人员引入了Optional\<T>，这样就不用返回众所周知容易出问题的null了。
 
 Optional里面几种可以迫使你显式地检查值是否存在或处理值不存在的情形的方法也不错。
  isPresent()将在Optional包含值的时候返回true, 否则返回false。
- ifPresent(Consumer<T> block)会在值存在的时候执行给定的代码块。我们在第3章介绍了Consumer函数式接口；它让你传递一个接收T类型参数，并返回void的Lambda表达式。
+ ifPresent(Consumer\<T> block)会在值存在的时候执行给定的代码块。我们在第3章介绍了Consumer函数式接口；它让你传递一个接收T类型参数，并返回void的Lambda表达式。
  T get()会在值存在时返回值，否则抛出一个NoSuchElement异常。
  T orElse(T other)会在值存在时返回值，否则返回一个默认值。
 
@@ -243,7 +243,7 @@ reduce还有一个重载的变体，它不接受初始值，但是会返回一�
 ~~~java
 Optional<Integer> sum = numbers.stream().reduce((a, b) -> (a + b));
 ~~~
-为什么它返回一个Optional<Integer>呢？考虑流中没有任何元素的情况。 reduce操作无法返回其和，因为它没有初始值。这就是为什么结果被包裹在一个Optional对象里，以表明和可能不存在。
+为什么它返回一个Optional\<Integer>呢？考虑流中没有任何元素的情况。 reduce操作无法返回其和，因为它没有初始值。这就是为什么结果被包裹在一个Optional对象里，以表明和可能不存在。
 
 你可以像下面这样使用reduce来计算流中的最大值:
 ~~~java
@@ -276,20 +276,87 @@ int sum = numbers.parallelStream().reduce(0, Integer::sum);
 
 | 操作      | 类型              | 返回类型    | 使用的类型/函数式接口  | 函数描述符     |
 | --------- | ----------------- | ----------- | ---------------------- | -------------- |
-| filter    | 中间              | Stream<T>   | Predicate<T>           | T -> boolean   |
-| distinct  | 中间(有状态-无界) | Stream<T>   |                        |                |
-| skip      | 中间(有状态-有界) | Stream<T>   | long                   |                |
-| limit     | 中间(有状态-有界) | Stream<T>   | long                   |                |
-| map       | 中间              | Stream<R>   | Function<T, R>         | T -> R         |
-| flatMap   | 中间              | Stream<R>   | Function<T, Stream<R>> | T -> Stream<R> |
-| sorted    | 中间(有状态-无界) | Stream<T>   | Comparator<T>          | (T, T) -> int  |
-| anyMatch  | 终端              | boolean     | Predicate<T>           | T -> boolean   |
-| noneMatch | 终端              | boolean     | Predicate<T>           | T -> boolean   |
-| allMatch  | 终端              | boolean     | Predicate<T>           | T -> boolean   |
-| findAny   | 终端              | Optional<T> |                        |                |
-| findFirst | 终端              | Optional<T> |                        |                |
-| forEach   | 终端              | void        | Consumer<T>            | T -> void      |
-| collect   | 终端              | R           | Collector<T, A, R>     |                |
-| reduce    | 终端(有状态-有界) | Optional<T> | BinaryOperator<T>      | (T, T) -> T    |
+| filter    | 中间              | Stream\<T>   | Predicate\<T>           | T -> boolean   |
+| distinct  | 中间(有状态-无界) | Stream\<T>   |                        |                |
+| skip      | 中间(有状态-有界) | Stream\<T>   | long                   |                |
+| limit     | 中间(有状态-有界) | Stream\<T> | long                   |                |
+| map       | 中间              | Stream\<R>  | Function\<T, R>         | T -> R         |
+| flatMap   | 中间              | Stream\<R>  | Function\<T, Stream\<R>> | T -> Stream\<R> |
+| sorted    | 中间(有状态-无界) | Stream\<T>  | Comparator\<T>          | (T, T) -> int  |
+| anyMatch  | 终端              | boolean     | Predicate\<T>           | T -> boolean   |
+| noneMatch | 终端              | boolean     | Predicate\<T>           | T -> boolean   |
+| allMatch  | 终端              | boolean     | Predicate\<T>           | T -> boolean   |
+| findAny   | 终端              | Optional\<T> |                        |                |
+| findFirst | 终端              | Optional\<T> |                        |                |
+| forEach   | 终端              | void        | Consumer\<T>            | T -> void      |
+| collect   | 终端              | R           | Collector\<T, A, R>     |                |
+| reduce    | 终端(有状态-有界) | Optional\<T> | BinaryOperator\<T>      | (T, T) -> T    |
 | count     | 终端              | long        |                        |                |
+
+### 5.6 数值流
+
+我们在前面看到了可以使用reduce方法计算流中元素的总和。例如，你可以像下面这样计算菜单的热量：
+~~~java
+int calories = menu.stream()
+    .map(Dish::getCalories)
+    .reduce(0, Integer::sum);
+~~~
+这段代码的问题是，它有一个暗含的装箱成本。每个Integer都必须拆箱成一个原始类型，再进行求和。
+
+但不要担心， Stream API还提供了原始类型流特化，专门支持处理数值流的方法。
+
+### 5.6.1 原始类型流特化
+
+Java 8引入了三个原始类型特化流接口来解决这个问题： IntStream、 DoubleStream和LongStream，分别将流中的元素特化为int、 long和double，从而避免了暗含的装箱成本。每个接口都带来了进行常用数值归约的新方法，比如对数值流求和的sum，找到最大元素的max。此外还有在必要时再把它们转换回对象流的方法。要记住的是，这些特化的原因并不在于流的复杂性，而是装箱造成的复杂性——即类似int和Integer之间的效率差异。
+
+**1. 映射到数值流**
+
+将流转换为特化版本的常用方法是mapToInt、 mapToDouble和mapToLong。这些方法和前面说的map方法的工作方式一样，只是它们返回的是一个特化流，而不是Stream\<T>。例如，你可以像下面这样用mapToInt对menu中的卡路里求和：
+~~~java
+int calories = menu.stream()
+    .mapToInt(Dish::getCalories)
+    .sum();
+~~~
+这里， mapToInt会从每道菜中提取热量（用一个Integer表示），并返回一个IntStream（而不是一个Stream\<Integer>）。然后你就可以调用IntStream接口中定义的sum方法，对卡路里求和了！请注意，如果流是空的， sum默认返回0。 IntStream还支持其他的方便方法，如max、 min、 average等。
+
+**2. 转换回对象流**
+
+同样，一旦有了数值流，你可能会想把它转换回非特化流。例如， IntStream上的操作只能产生原始整数：IntStream 的 map 操作接受的Lambda必须接受int并返回 int（一个IntUnaryOperator）。但是你可能想要生成另一类值，比如Dish。为此，你需要访问Stream接口中定义的那些更广义的操作。要把原始流转换成一般流（每个int都会装箱成一个Integer），可以使用boxed方法，如下所示：
+
+~~~java
+IntStream intStream = menu.stream().mapToInt(Dish::getCalories);
+Stream<Integer> stream = intStream.boxed();
+~~~
+
+在下一节中会看到，在需要将数值范围装箱成为一个一般流时， boxed尤其有用。  
+
+**3. 默认值OptionalInt  **
+
+求和的那个例子很容易，因为它有一个默认值： 0。但是，如果你要计算IntStream中的最大元素，就得换个法子了，因为0是错误的结果。如何区分没有元素的流和最大值真的是0的流呢？前面我们介绍了Optional类，这是一个可以表示值存在或不存在的容器。 Optional可以用Integer、 String等参考类型来参数化。对于三种原始流特化，也分别有一个Optional原始类型特化版本： OptionalInt、 OptionalDouble和OptionalLong。
+
+例如，要找到IntStream中的最大元素，可以调用max方法，它会返回一个OptionalInt：
+
+~~~java
+OptionalInt maxCalories = menu.stream()
+	.mapToInt(Dish::getCalories)
+	.max();
+~~~
+
+现在，如果没有最大值的话，你就可以显式处理OptionalInt去定义一个默认值了：
+
+~~~java
+int max = maxCalories.orElse(1);  
+~~~
+
+### 5.6.2 数值范围
+
+和数字打交道时，有一个常用的东西就是数值范围。比如，假设你想要生成1和100之间的所有数字。 Java 8引入了两个可以用于IntStream和LongStream的静态方法，帮助生成这种范围：range和rangeClosed。这两个方法都是第一个参数接受起始值，第二个参数接受结束值。但range是不包含结束值的，而rangeClosed则包含结束值。  
+
+~~~java
+IntStream evenNumbers = IntStream.rangeClosed(1, 100)
+	.filter(n -> n % 2 == 0);
+System.out.println(evenNumbers.count());
+~~~
+
+这里我们用了rangeClosed方法来生成1到100之间的所有数字。它会产生一个流，然后你可以链接filter方法，只选出偶数。到目前为止还没有进行任何计算。最后，你对生成的流调用count。因为count是一个终端操作，所以它会处理流，并返回结果50，这正是1到100（包括两端）中所有偶数的个数。请注意，比较一下，如果改用IntStream.range(1, 100)，则结果将会是49个偶数，因为range是不包含结束值的。
 

@@ -3,11 +3,20 @@ package java8实战.example.chapter5;
 import java8实战.example.chapter4.Dish;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
+import java.util.Set;
 
+import static java.util.Comparator.comparing;
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toSet;
 
+
+/**
+ * 《Java8实战》第5章 使用流
+ */
 public class Chapter5Test {
     public static void main(String[] args) {
         List<Dish> menu = Arrays.asList(
@@ -21,20 +30,26 @@ public class Chapter5Test {
                 new Dish("prawns", false, 300, Dish.Type.FISH),
                 new Dish("salmon", false, 450, Dish.Type.FISH));
 
+        //5.1.2 筛选各异的元素
         five_1_2_filter();
         System.out.println("=========================");
+        //5.1.3 截短流
         five_1_3_limit(menu);
         System.out.println("=========================");
+        //5.1.4 跳过元素
         five_1_4_Skip(menu);
         System.out.println("=========================");
+        //5.2.2 流的扁平化
         five_2_2_flatMap();
         System.out.println("=========================");
 
         List<Integer> numbers1 = Arrays.asList(1, 2, 3);
         List<Integer> numbers2 = Arrays.asList(3, 4);
 
+        //测验5.2 映射 (2)
         test_5_2_test2(numbers1, numbers2);
         System.out.println("=========================");
+        //测验5.2 映射 (3)
         test_5_2_test3(numbers1, numbers2);
         System.out.println("=========================");
 
@@ -50,9 +65,13 @@ public class Chapter5Test {
                 new Transaction(mario, 2012, 700),
                 new Transaction(alan, 2012, 950)
         );
-        
-        System.out.println("5.5 付诸实践");
 
+        //5.5 付诸实践
+        five_5_practice(transactions);
+    }
+
+    private static void five_5_practice(List<Transaction> transactions) {
+        System.out.println("5.5 付诸实践");
         //(1) 找出2011年发生的所有交易，并按交易额排序（从低到高）。
         //(2) 交易员都在哪些不同的城市工作过？
         //(3) 查找所有来自于剑桥的交易员，并按姓名排序。
@@ -62,7 +81,96 @@ public class Chapter5Test {
         //(7) 所有交易中，最高的交易额是多少？
         //(8) 找到交易额最小的交易。
 
+        System.out.println("（1）找出2011年发生的所有交易，并按交易额排序（从低到高）");
+        List<Transaction> transactionList =
+                transactions.stream()
+                        .filter(t -> t.getYear() == 2011)
+                        .sorted(comparing(Transaction::getValue))
+                        .collect(toList());
+        System.out.println(transactionList);
+        System.out.println("---------------");
 
+        System.out.println("(2) 交易员都在哪些不同的城市工作过？");
+        List<String> cityList =
+                transactions.stream()
+                        // 下面两个map可以合并为.map(transaction -> transaction.getTrader().getCity())
+                        .map(Transaction::getTrader)
+                        .map(Trader::getCity)
+                        .distinct()
+                        .collect(toList());
+        System.out.println("cityList： " + cityList);
+        // 这里还有一个新招：你可以去掉distinct()，改用toSet()，这样就会把流转换为集合。
+        Set<String> cities =
+                transactions.stream()
+                        .map(transaction -> transaction.getTrader().getCity())
+                        // java.util.stream.Collectors.toSet;
+                        .collect(toSet());
+        System.out.println("citySet: " + cities);
+        System.out.println("---------------");
+
+        System.out.println("(3) 查找所有来自于剑桥的交易员，并按姓名排序。");
+        List<Trader> traderList =
+                transactions.stream()
+                        .map(Transaction::getTrader)
+                        .filter(t -> "Cambridge".equals(t.getCity()))
+                        //不要忘记去重
+                        .distinct()
+                        .sorted(comparing(Trader::getName))
+                        .collect(toList());
+        System.out.println(traderList);
+        System.out.println("---------------");
+
+        System.out.println("(4) 返回所有交易员的姓名字符串，按字母顺序排序。");
+        String tradeNameStr = transactions.stream()
+                .map(t -> t.getTrader().getName())
+                .distinct()
+                //直接排序，sorted内不需要传参数
+                .sorted()
+                .reduce("", (a, b) -> a + b);
+        System.out.println("tradeNameStr: " + tradeNameStr);
+        // 请注意，此解决方案效率不高（所有字符串都被反复连接，每次迭代的时候都要建立一个新的String对象）。
+        // 下一章中， 你将看到一个更为高效的解决方案，它像下面这样使用joining（其内部会用到StringBuilder）
+        String traderStr =
+                transactions.stream()
+                        .map(transaction -> transaction.getTrader().getName())
+                        .distinct()
+                        .sorted()
+                        // java.util.stream.Collectors.joining
+                        .collect(joining());
+        System.out.println("traderStr: " + traderStr);
+        System.out.println("---------------");
+
+        System.out.println("(5) 有没有交易员是在米兰工作的？");
+        boolean milanExist = transactions.stream()
+                .anyMatch(t -> "Milan".equals(t.getTrader().getCity()));
+        System.out.println(milanExist);
+        System.out.println("---------------");
+
+        System.out.println("(6) 打印生活在剑桥的交易员的所有交易额。");
+        transactions.stream()
+                .filter(t -> "Cambridge".equals(t.getTrader().getCity()))
+                .map(Transaction::getValue)
+                .forEach(System.out::println);
+        System.out.println("---------------");
+
+        System.out.println("(7) 所有交易中，最高的交易额是多少？");
+        Optional<Integer> maxTradeVal =
+                transactions.stream()
+                        .map(Transaction::getValue)
+                        .reduce(Integer::max);
+        System.out.println(maxTradeVal.isPresent() ? maxTradeVal.get() : "无最高交易额");
+        System.out.println("---------------");
+
+        System.out.println("(8) 找到交易额最小的交易。");
+        Optional<Transaction> minTradeVal =
+                transactions.stream()
+                        .reduce((t1, t2) -> t1.getValue() < t2.getValue() ? t1 : t2);
+        System.out.println("使用reduce方法： " + (minTradeVal.isPresent() ? minTradeVal.get() : "无交易额最小的交易"));
+        //你还可以做得更好。流支持min和max方法，它们可以接受一个Comparator作为参数，指定计算最小或最大值时要比较哪个键值：
+        Optional<Transaction> smallestTransaction =
+                transactions.stream()
+                        .min(comparing(Transaction::getValue));
+        System.out.println("使用min方法： " + (smallestTransaction.isPresent() ? smallestTransaction.get() : "无交易额最小的交易"));
     }
 
     private static void test_5_2_test3(List<Integer> numbers1, List<Integer> numbers2) {
@@ -113,7 +221,7 @@ public class Chapter5Test {
                         .map(w -> w.split(""))
                         .flatMap(Arrays::stream)
                         .distinct()
-                        .collect(Collectors.toList());
+                        .collect(toList());
         System.out.println(uniqueCharacters);
     }
 

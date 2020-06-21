@@ -1,4 +1,4 @@
-package X_20200617_重新建立repo的第一天;
+package java8实战.example.chapter2;
 
 /**
  * 《Java8实战》2.3.2 测验2.2匿名类谜题

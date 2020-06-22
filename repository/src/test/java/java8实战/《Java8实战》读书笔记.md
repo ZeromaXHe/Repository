@@ -360,3 +360,270 @@ System.out.println(evenNumbers.count());
 
 这里我们用了rangeClosed方法来生成1到100之间的所有数字。它会产生一个流，然后你可以链接filter方法，只选出偶数。到目前为止还没有进行任何计算。最后，你对生成的流调用count。因为count是一个终端操作，所以它会处理流，并返回结果50，这正是1到100（包括两端）中所有偶数的个数。请注意，比较一下，如果改用IntStream.range(1, 100)，则结果将会是49个偶数，因为range是不包含结束值的。
 
+### 5.6.3 数值流应用：勾股数
+
+~~~java
+Stream<int[]> pythagoreanTriples =
+    IntStream.rangeClosed(1, 100).boxed()
+        .flatMap(a ->
+            IntStream.rangeClosed(a, 100)
+                .filter(b -> Math.sqrt(a*a + b*b) % 1 == 0)
+                .mapToObj(b ->
+                    new int[]{a, b, (int)Math.sqrt(a * a + b * b)})
+        );
+~~~
+
+更好的方法：
+
+~~~java
+Stream<double[]> pythagoreanTriples2 =
+    IntStream.rangeClosed(1, 100).boxed()
+        .flatMap(a ->
+            IntStream.rangeClosed(a, 100)
+                .mapToObj(
+                    b -> new double[]{a, b, Math.sqrt(a*a + b*b)})
+                .filter(t -> t[2] % 1 == 0));
+~~~
+
+### 5.7 构建流
+
+**5.7.1 由值创建流**
+
+你可以使用静态方法Stream.of，通过显式值创建一个流。它可以接受任意数量的参数。
+~~~java
+Stream<String> stream = Stream.of("Java 8 ", "Lambdas ", "In ", "Action");
+stream.map(String::toUpperCase).forEach(System.out::println);
+~~~
+
+你可以使用empty得到一个空流，如下所示：
+~~~java
+Stream<String> emptyStream = Stream.empty();
+~~~
+
+**5.7.2 由数组创建流**
+
+你可以使用静态方法Arrays.stream从数组创建一个流。它接受一个数组作为参数。例如，你可以将一个原始类型int的数组转换成一个IntStream，如下所示：
+~~~java
+int[] numbers = {2, 3, 5, 7, 11, 13};
+int sum = Arrays.stream(numbers).sum();
+~~~
+
+**5.7.3 由文件生成流**
+
+Java中用于处理文件等I/O操作的NIO API（非阻塞 I/O）已更新，以便利用Stream API。java.nio.file.Files中的很多静态方法都会返回一个流。例如，一个很有用的方法是Files.lines，它会返回一个由指定文件中的各行构成的字符串流。使用你迄今所学的内容，你可以用这个方法看看一个文件中有多少各不相同的词：
+~~~java
+long uniqueWords = 0;
+try(Stream<String> lines =
+    Files.lines(Paths.get("data.txt"), Charset.defaultCharset())){
+uniqueWords = lines.flatMap(line -> Arrays.stream(line.split(" ")))
+    .distinct()
+    .count();
+}
+catch(IOException e){
+}
+~~~
+
+**5.7.4 由函数生成流：创建无限流**
+
+Stream API提供了两个静态方法来从函数生成流： Stream.iterate和Stream.generate。这两个操作可以创建所谓的无限流：不像从固定集合创建的流那样有固定大小的流。由iterate和generate产生的流会用给定的函数按需创建值，因此可以无穷无尽地计算下去！一般来说，应该使用limit(n)来对这种流加以限制，以避免打印无穷多个值。
+
+1. 迭代
+
+我们先来看一个iterate的简单例子，然后再解释：
+~~~java
+Stream.iterate(0, n -> n + 2)
+.limit(10)
+.forEach(System.out::println);
+~~~
+iterate方法接受一个初始值（在这里是0），还有一个依次应用在每个产生的新值上的Lambda（ UnaryOperator<t>类型）。
+
+测验5.4：斐波那契元组序列：
+~~~java
+Stream.iterate(new int[]{0, 1},
+        t -> new int[]{t[1], t[0]+t[1]})
+    .limit(20)
+    .forEach(t -> System.out.println("(" + t[0] + "," + t[1] +")"));
+~~~
+
+2. 生成
+
+与iterate方法类似， generate方法也可让你按需生成一个无限流。但generate不是依次对每个新生成的值应用函数的。它接受一个Supplier<T>类型的Lambda提供新的值。我们先来看一个简单的用法：
+~~~java
+Stream.generate(Math::random)
+    .limit(5)
+    .forEach(System.out::println);
+~~~
+
+下面的代码就是如何创建一个在调用时返回下一个斐波纳契项的IntSupplier：
+~~~java
+IntSupplier fib = new IntSupplier(){
+    private int previous = 0;
+    private int current = 1;
+    public int getAsInt(){
+        int oldPrevious = this.previous;
+        int nextValue = this.previous + this.current;
+        this.previous = this.current;
+        this.current = nextValue;
+        return oldPrevious;
+    }
+};
+IntStream.generate(fib).limit(10).forEach(System.out::println);
+~~~
+前面的代码创建了一个IntSupplier的实例。此对象有可变的状态：它在两个实例变量中记录了前一个斐波纳契项和当前的斐波纳契项。 getAsInt在调用时会改变对象的状态，由此在每次调用时产生新的值。相比之下， 使用iterate的方法则是纯粹不变的：它没有修改现有状态，但在每次迭代时会创建新的元组。你将在第7章了解到，你应该始终采用不变的方法，以便并行处理流，并保持结果正确。
+
+## 第6章 用流收集数据
+
+### 6.2 规约和汇总
+
+我们先来举一个简单的例子，利用counting工厂方法返回的收集器，数一数菜单里有多少种菜：
+~~~java
+long howManyDishes = menu.stream().collect(Collectors.counting());
+~~~
+这还可以写得更为直接：
+~~~java
+long howManyDishes = menu.stream().count();
+~~~
+
+### 6.2.1 查找流中的最大值和最小值
+
+你可以使用两个收集器， Collectors.maxBy和Collectors.minBy，来计算流中的最大或最小值。这两个收集器接收一个Comparator参数来比较流中的元素。你可以创建一个Comparator来根据所含热量对菜肴进行比较，并把它传递给Collectors.maxBy：
+~~~java
+Comparator<Dish> dishCaloriesComparator =
+    Comparator.comparingInt(Dish::getCalories);
+Optional<Dish> mostCalorieDish =
+    menu.stream()
+        .collect(maxBy(dishCaloriesComparator));
+~~~
+
+### 6.2.2 汇总
+
+Collectors类专门为汇总提供了一个工厂方法： Collectors.summingInt。它可接受一个把对象映射为求和所需int的函数，并返回一个收集器；该收集器在传递给普通的collect方法后即执行我们需要的汇总操作。举个例子来说，你可以这样求出菜单列表的总热量：
+~~~java
+int totalCalories = menu.stream().collect(summingInt(Dish::getCalories));
+~~~
+Collectors.summingLong和Collectors.summingDouble方法的作用完全一样，可以用于求和字段为long或double的情况。
+
+但汇总不仅仅是求和；还有Collectors.averagingInt，连同对应的averagingLong和averagingDouble可以计算数值的平均数：
+~~~java
+double avgCalories =
+    menu.stream().collect(averagingInt(Dish::getCalories));
+~~~
+
+不过很多时候，你可能想要得到两个或更多这样的结果，而且你希望只需一次操作就可以完成。在这种情况下，你可以使用summarizingInt工厂方法返回的收集器。例如，通过一次summarizing操作你可以就数出菜单中元素的个数，并得到菜肴热量总和、平均值、最大值和最小值：
+~~~java
+IntSummaryStatistics menuStatistics =
+    menu.stream().collect(summarizingInt(Dish::getCalories));
+~~~
+这个收集器会把所有这些信息收集到一个叫作IntSummaryStatistics的类里，它提供了方便的取值（ getter）方法来访问结果。打印menuStatisticobject会得到以下输出：
+~~~java
+IntSummaryStatistics{count=9, sum=4300, min=120,
+                     average=477.777778, max=800}
+~~~
+同样，相应的summarizingLong和summarizingDouble工厂方法有相关的LongSummaryStatistics和DoubleSummaryStatistics类型，适用于收集的属性是原始类型long或double的情况
+
+###6.2.3 连接字符串
+
+joining工厂方法返回的收集器会把对流中每一个对象应用toString方法得到的所有字符串连接成一个字符串。这意味着你把菜单中所有菜肴的名称连接起来，如下所示：
+~~~java
+String shortMenu = menu.stream().map(Dish::getName).collect(joining());
+~~~
+请注意， joining在内部使用了StringBuilder来把生成的字符串逐个追加起来。此外还要注意，如果Dish类有一个toString方法来返回菜肴的名称，那你无需用提取每一道菜名称的函数来对原流做映射就能够得到相同的结果：
+~~~java
+String shortMenu = menu.stream().collect(joining());
+~~~
+二者均可产生以下字符串：
+`porkbeefchickenfrench friesriceseason fruitpizzaprawnssalmon`
+但该字符串的可读性并不好。幸好， joining工厂方法有一个重载版本可以接受元素之间的分界符，这样你就可以得到一个逗号分隔的菜肴名称列表：
+~~~java
+String shortMenu = menu.stream().map(Dish::getName).collect(joining(", "));
+~~~
+正如我们预期的那样，它会生成：
+`pork, beef, chicken, french fries, rice, season fruit, pizza, prawns, salmon`
+
+### 6.2.4 广义的规约汇总
+
+事实上，我们已经讨论的所有收集器，都是一个可以用reducing工厂方法定义的归约过程的特殊情况而已。 Collectors.reducing工厂方法是所有这些特殊情况的一般化。可以说，先前讨论的案例仅仅是为了方便程序员而已。（但是，请记得方便程序员和可读性是头等大事！ ）例如，可以用reducing方法创建的收集器来计算你菜单的总热量，如下所示：
+~~~java
+int totalCalories = menu.stream().collect(reducing(
+                                    0, Dish::getCalories, (i, j) -> i + j));
+~~~
+它需要三个参数。
+
+ 第一个参数是归约操作的起始值，也是流中没有元素时的返回值，所以很显然对于数值
+和而言0是一个合适的值。
+ 第二个参数就是你在6.2.2节中使用的函数，将菜肴转换成一个表示其所含热量的int。
+ 第三个参数是一个BinaryOperator，将两个项目累积成一个同类型的值。这里它就是
+对两个int求和。
+
+同样，你可以使用下面这样单参数形式的reducing来找到热量最高的菜，如下所示：
+~~~java
+Optional<Dish> mostCalorieDish =
+    menu.stream().collect(reducing(
+        (d1, d2) -> d1.getCalories() > d2.getCalories() ? d1 : d2));
+~~~
+你可以把单参数reducing工厂方法创建的收集器看作三参数方法的特殊情况，它把流中的第一个项目作为起点，把恒等函数（即一个函数仅仅是返回其输入参数）作为一个转换函数。这也意味着，要是把单参数reducing收集器传递给空流的collect方法，收集器就没有起点；正如我们在6.2.1节中所解释的，它将因此而返回一个Optional<Dish>对象。
+
+## 6.3 分组
+
+假设你要把菜单中的菜按照类型进行分类，有肉的放一组，有鱼的放一组，其他的都放另一组。用Collectors.groupingBy工厂方法返回的收集器就可以轻松地完成这项任务，如下所示：
+~~~java
+Map<Dish.Type, List<Dish>> dishesByType =
+    menu.stream().collect(groupingBy(Dish::getType));
+~~~
+其结果是下面的Map：
+`{FISH=[prawns, salmon], OTHER=[french fries, rice, season fruit, pizza],MEAT=[pork, beef, chicken]}`
+
+这里，你给groupingBy方法传递了一个Function（以方法引用的形式），它提取了流中每一道Dish的Dish.Type。我们把这个Function叫作分类函数，因为它用来把流中的元素分成不同的组。如图6-4所示，分组操作的结果是一个Map，把分组函数返回的值作为映射的键，把流中所有具有这个分类值的项目的列表作为对应的映射值。
+
+但是，分类函数不一定像方法引用那样可用，因为你想用以分类的条件可能比简单的属性访问器要复杂。例如，你可能想把热量不到400卡路里的菜划分为“低热量”（ diet），热量400到700卡路里的菜划为“普通”（ normal），高于700卡路里的划为“高热量”（ fat）。由于Dish类的作者没有把这个操作写成一个方法，你无法使用方法引用，但你可以把这个逻辑写成Lambda表达式：
+~~~java
+public enum CaloricLevel { DIET, NORMAL, FAT }
+Map<CaloricLevel, List<Dish>> dishesByCaloricLevel = menu.stream().collect(
+    groupingBy(dish -> {
+        if (dish.getCalories() <= 400) return CaloricLevel.DIET;
+        else if (dish.getCalories() <= 700) return CaloricLevel.NORMAL;
+        else return CaloricLevel.FAT;
+} ));
+~~~
+
+### 6.3.1 多级分组
+
+要实现多级分组，我们可以使用一个由双参数版本的Collectors.groupingBy工厂方法创建的收集器，它除了普通的分类函数之外，还可以接受collector类型的第二个参数。那么要进行二级分组的话，我们可以把一个内层groupingBy传递给外层groupingBy，并定义一个为流中项目分类的二级标准
+~~~java
+Map<Dish.Type, Map<CaloricLevel, List<Dish>>> dishesByTypeCaloricLevel =
+    menu.stream().collect(
+        groupingBy(Dish::getType,
+            groupingBy(dish -> {
+                if (dish.getCalories() <= 400) return CaloricLevel.DIET;
+                else if (dish.getCalories() <= 700) return CaloricLevel.NORMAL;
+                else return CaloricLevel.FAT;
+            } )
+        )
+    );
+~~~
+
+### 6.3.2 按子组收集数据
+
+在上一节中，我们看到可以把第二个groupingBy收集器传递给外层收集器来实现多级分组。但进一步说，传递给第一个groupingBy的第二个收集器可以是任何类型，而不一定是另一个groupingBy。例如，要数一数菜单中每类菜有多少个，可以传递counting收集器作为groupingBy收集器的第二个参数：
+~~~java
+Map<Dish.Type, Long> typesCount = menu.stream().collect(
+    groupingBy(Dish::getType, counting()));
+~~~
+其结果是下面的Map：
+`{MEAT=3, FISH=2, OTHER=4}`
+
+还要注意，普通的单参数groupingBy(f)（其中f是分类函数）实际上是groupingBy(f,toList())的简便写法。
+
+再举一个例子，你可以把前面用于查找菜单中热量最高的菜肴的收集器改一改，按照菜的类型分类：
+~~~java
+Map<Dish.Type, Optional<Dish>> mostCaloricByType =
+    menu.stream()
+        .collect(groupingBy(Dish::getType,
+                            maxBy(comparingInt(Dish::getCalories))));
+~~~
+这个分组的结果显然是一个map，以Dish的类型作为键，以包装了该类型中热量最高的Dish的Optional<Dish>作为值：
+`{FISH=Optional[salmon], OTHER=Optional[pizza], MEAT=Optional[pork]}`
+
+**1. 把收集器的结果转换为另一种类型**
+
+

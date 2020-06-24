@@ -626,4 +626,190 @@ Map<Dish.Type, Optional<Dish>> mostCaloricByType =
 
 **1. 把收集器的结果转换为另一种类型**
 
+因为分组操作的Map结果中的每个值上包装的Optional没什么用，所以你可能想要把它们去掉。要做到这一点，或者更一般地来说，把收集器返回的结果转换为另一种类型，你可以使用Collectors.collectingAndThen工厂方法返回的收集器
 
+~~~java
+Map<Dish.Type, Dish> mostCaloricByType =
+    menu.stream()
+        .collect(groupingBy(Dish::getType,
+            collectingAndThen(
+                maxBy(comparingInt(Dish::getCalories)),
+                Optional::get)));
+~~~
+这个工厂方法接受两个参数——要转换的收集器以及转换函数，并返回另一个收集器。这个收集器相当于旧收集器的一个包装， collect操作的最后一步就是将返回值用转换函数做一个映射。在这里，被包起来的收集器就是用maxBy建立的那个，而转换函数Optional::get则把返回的Optional中的值提取出来。前面已经说过，这个操作放在这里是安全的，因为reducing收集器永远都不会返回Optional.empty()。其结果是下面的Map：
+`{FISH=salmon, OTHER=pizza, MEAT=pork}`
+
+**2. 与groupingBy联合使用的其他收集器的例子**
+
+一般来说，通过groupingBy工厂方法的第二个参数传递的收集器将会对分到同一组中的所有流元素执行进一步归约操作。例如，你还重用求出所有菜肴热量总和的收集器，不过这次是对每一组Dish求和：
+~~~java
+Map<Dish.Type, Integer> totalCaloriesByType =
+    menu.stream().collect(groupingBy(Dish::getType,
+                                summingInt(Dish::getCalories)));
+~~~
+然而常常和groupingBy联合使用的另一个收集器是mapping方法生成的。这个方法接受两个参数：一个函数对流中的元素做变换，另一个则将变换的结果对象收集起来。其目的是在累加之前对每个输入元素应用一个映射函数，这样就可以让接受特定类型元素的收集器适应不同类型的对象。我们来看一个使用这个收集器的实际例子。比方说你想要知道，对于每种类型的Dish，菜单中都有哪些CaloricLevel。 我们可以把groupingBy和mapping收集器结合起来，如下所示：
+~~~java
+Map<Dish.Type, Set<CaloricLevel>> caloricLevelsByType =
+    menu.stream().collect(
+        groupingBy(Dish::getType, mapping(
+            dish -> { if (dish.getCalories() <= 400) return CaloricLevel.DIET;
+                    else if (dish.getCalories() <= 700) return CaloricLevel.NORMAL;
+                    else return CaloricLevel.FAT; },
+            toSet() )));
+~~~
+这里，就像我们前面见到过的，传递给映射方法的转换函数将Dish映射成了它的CaloricLevel：生成的CaloricLevel流传递给一个toSet收集器，它和toList类似，不过是把流中的元素累积到一个Set而不是List中，以便仅保留各不相同的值。如先前的示例所示，这个映射收集器将会收集分组函数生成的各个子流中的元素，让你得到这样的Map结果：
+`{OTHER=[DIET, NORMAL], MEAT=[DIET, NORMAL, FAT], FISH=[DIET, NORMAL]}`
+
+由此你就可以轻松地做出选择了。如果你想吃鱼并且在减肥，那很容易找到一道菜；同样，如果你饥肠辘辘，想要很多热量的话，菜单中肉类部分就可以满足你的饕餮之欲了。请注意在上一个示例中，对于返回的Set是什么类型并没有任何保证。但通过使用toCollection，你就可以有更多的控制。例如，你可以给它传递一个构造函数引用来要求HashSet
+~~~java
+Map<Dish.Type, Set<CaloricLevel>> caloricLevelsByType =
+    menu.stream().collect(
+        groupingBy(Dish::getType, mapping(
+            dish -> { if (dish.getCalories() <= 400) return CaloricLevel.DIET;
+                    else if (dish.getCalories() <= 700) return CaloricLevel.NORMAL;
+                    else return CaloricLevel.FAT; },
+            toCollection(HashSet::new) )));
+~~~
+
+### 6.4 分区
+
+分区是分组的特殊情况：由一个谓词（返回一个布尔值的函数）作为分类函数，它称分区函数。分区函数返回一个布尔值，这意味着得到的分组Map的键类型是Boolean，于是它最多可以分为两组——true是一组， false是一组。
+~~~java
+Map<Boolean, List<Dish>> partitionedMenu =
+    menu.stream().collect(partitioningBy(Dish::isVegetarian));
+~~~
+
+### 6.4.1 分区的优势
+
+而且就像你在分组中看到的， partitioningBy工厂方法有一个重载版本，可以像下面这样传递第二个收集器：
+~~~java
+Map<Boolean, Map<Dish.Type, List<Dish>>> vegetarianDishesByType =
+    menu.stream().collect(
+        partitioningBy(Dish::isVegetarian,
+        groupingBy(Dish::getType)));
+~~~
+
+| 工厂方法          | 返回类型               | 用于                                                         |
+| ----------------- | ---------------------- | ------------------------------------------------------------ |
+| toList            | List\<T>               | 把流中所有项目收集到一个List                                 |
+| toSet             | Set\<T>                | 把流中所有项目收集到一个Set，删除重复项                      |
+| toCollection      | Collection\<T>         | 把流中所有项目收集到给定的供应源创建的集合                   |
+| counting          | Long                   | 计算流中元素的个数                                           |
+| summingInt        | Integer                | 对流中项目的一个整数属性求和                                 |
+| averagingInt      | Double                 | 计算流中项目Integer属性的平均值                              |
+| summarizingInt    | IntSummaryStatistics   | 收集关于流中项目Integer属性的统计值，例如最大、最小、总和与平均值 |
+| joining           | String                 | 连接对流中每个项目调用toString方法所生成的字符串             |
+| maxBy             | Optional\<T>           | 一个包裹了流中按照给定比较器选出的最大元素的Optional，或如果流为空则为Optional.empty() |
+| minBy             | Optional\<T>           | 一个包裹了流中按照给定比较器选出的最小元素的Optional，或如果流为空则为Optional.empty() |
+| reducing          | 规约操作产生的类型     | 从一个作为累加器的初始值开始，利用BinaryOperator与流中的元素逐个结合，从而将流规约为单个值 |
+| collectingAndThen | 转换函数返回的类型     | 包裹另一个收集器，对其结果应用转换函数                       |
+| groupingBy        | Map\<K, List\<T>>      | 根据项目的一个属性的值对流中的项目作问组，并将属性值作为结果Map的键 |
+| partitioningBy    | Map\<Boolean,List\<T>> | 根据对流中每个项目应用谓词的结果来对项目进行分区             |
+
+
+### 6.5 收集器接口
+
+首先让我们在下面的列表中看看Collector接口的定义，它列出了接口的签名以及声明的五个方法。
+~~~java
+public interface Collector<T, A, R> {
+    Supplier<A> supplier();
+    BiConsumer<A, T> accumulator();
+    Function<A, R> finisher();
+    BinaryOperator<A> combiner();
+    Set<Characteristics> characteristics();
+}
+~~~
+本列表适用以下定义。
+ T是流中要收集的项目的泛型。
+ A是累加器的类型，累加器是在收集过程中用于累积部分结果的对象。
+ R是收集操作得到的对象（通常但并不一定是集合）的类型。
+
+### 6.5.1 理解Collector接口
+
+现在我们可以一个个来分析Collector接口声明的五个方法了。通过分析，你会注意到，前四个方法都会返回一个会被collect方法调用的函数，而第五个方法characteristics则提供了一系列特征，也就是一个提示列表，告诉collect方法在执行归约操作的时候可以应用哪些优化（比如并行化）。
+
+**1. 建立新的结果容器： supplier方法**
+
+supplier方法必须返回一个结果为空的Supplier，也就是一个无参数函数，在调用时它会创建一个空的累加器实例，供数据收集过程使用。很明显，对于将累加器本身作为结果返回的收集器，比如我们的ToListCollector，在对空流执行操作的时候，这个空的累加器也代表了收集过程的结果。在我们的ToListCollector中， supplier返回一个空的List
+
+**2. 将元素添加到结果容器： accumulator方法**
+
+accumulator方法会返回执行归约操作的函数。当遍历到流中第n个元素时，这个函数执行时会有两个参数：保存归约结果的累加器（已收集了流中的前 n1 个项目）， 还有第n个元素本身。该函数将返回void，因为累加器是原位更新，即函数的执行改变了它的内部状态以体现遍历的元素的效果。对于ToListCollector，这个函数仅仅会把当前项目添加至已经遍历过的项目的列表
+
+**3. 对结果容器应用最终转换： finisher方法**
+
+在遍历完流后， finisher方法必须返回在累积过程的最后要调用的一个函数，以便将累加器对象转换为整个集合操作的最终结果。通常，就像ToListCollector的情况一样，累加器对象恰好符合预期的最终结果，因此无需进行转换。所以finisher方法只需返回identity函数
+
+这三个方法已经足以对流进行顺序归约，至少从逻辑上看可以按图6-7进行。实践中的实现细节可能还要复杂一点，一方面是因为流的延迟性质，可能在collect操作之前还需要完成其他中间操作的流水线，另一方面则是理论上可能要进行并行归约。
+
+**4. 合并两个结果容器： combiner方法**
+
+四个方法中的最后一个——combiner方法会返回一个供归约操作使用的函数，它定义了对流的各个子部分进行并行处理时，各个子部分归约所得的累加器要如何合并。对于toList而言，这个方法的实现非常简单，只要把从流的第二个部分收集到的项目列表加到遍历第一部分时得到的列表后面就行了
+
+有了这第四个方法，就可以对流进行并行归约了。它会用到Java 7中引入的分支/合并框架和Spliterator抽象，我们会在下一章中讲到。
+
+ 原始流会以递归方式拆分为子流，直到定义流是否需要进一步拆分的一个条件为非（如果分布式工作单位太小，并行计算往往比顺序计算要慢，而且要是生成的并行任务比处理器内核数多很多的话就毫无意义了）。
+ 现在，所有的子流都可以并行处理，即对每个子流应用图6-7所示的顺序归约算法。
+ 最后，使用收集器combiner方法返回的函数，将所有的部分结果两两合并。这时会把原始流每次拆分时得到的子流对应的结果合并起来。
+
+**5. characteristics方法**
+最后一个方法——characteristics会返回一个不可变的Characteristics集合，它定义了收集器的行为——尤其是关于流是否可以并行归约，以及可以使用哪些优化的提示。Characteristics是一个包含三个项目的枚举。
+
+ UNORDERED——归约结果不受流中项目的遍历和累积顺序的影响。
+ CONCURRENT——accumulator函数可以从多个线程同时调用，且该收集器可以并行归约流。如果收集器没有标为UNORDERED，那它仅在用于无序数据源时才可以并行归约。
+ IDENTITY_FINISH——这表明完成器方法返回的函数是一个恒等函数，可以跳过。这种情况下，累加器对象将会直接用作归约过程的最终结果。这也意味着，将累加器A不加检查地转换为结果R是安全的。
+
+我们迄今开发的ToListCollector是IDENTITY_FINISH的，因为用来累积流中元素的List已经是我们要的最终结果，用不着进一步转换了，但它并不是UNORDERED，因为用在有序流上的时候，我们还是希望顺序能够保留在得到的List中。最后，它是CONCURRENT的，但我们刚才说过了，仅仅在背后的数据源无序时才会并行处理。
+
+### 6.5.2 全部融合到一起
+
+前一小节中谈到的五个方法足够我们开发自己的ToListCollector了。你可以把它们都融合起来，如下面的代码清单所示。
+~~~java
+import java.util.*;
+import java.util.function.*;
+import java.util.stream.Collector;
+import static java.util.stream.Collector.Characteristics.*;
+
+public class ToListCollector<T> implements Collector<T, List<T>, List<T>> {
+    @Override
+    public Supplier<List<T>> supplier() {
+        return ArrayList::new;
+    }
+    @Override
+    public BiConsumer<List<T>, T> accumulator() {
+        return List::add;
+    }
+    @Override
+    public Function<List<T>, List<T>> finisher() {
+        return Function.indentity();
+    }
+    @Override
+    public BinaryOperator<List<T>> combiner() {
+        return (list1, list2) -> {
+            list1.addAll(list2);
+            return list1;
+        };
+    }
+    @Override
+    public Set<Characteristics> characteristics() {
+        return Collections.unmodifiableSet(EnumSet.of(
+                            IDENTITY_FINISH, CONCURRENT));
+    }
+}
+~~~
+请注意，这个实现与Collectors.toList方法并不完全相同，但区别仅仅是一些小的优化。这些优化的一个主要方面是Java API所提供的收集器在需要返回空列表时使用了Collections.emptyList()这个单例（ singleton）。这意味着它可安全地替代原生Java，来收集菜单流中的所有Dish的列表：
+`List<Dish> dishes = menuStream.collect(new ToListCollector<Dish>());`
+这个实现和标准的
+`List<Dish> dishes = menuStream.collect(toList());`
+构造之间的其他差异在于toList是一个工厂，而ToListCollector必须用new来实例化。
+
+**进行自定义收集而不去实现Collector**
+
+对于IDENTITY_FINISH的收集操作，还有一种方法可以得到同样的结果而无需从头实现新的Collectors接口。Stream有一个重载的collect方法可以接受另外三个函数——supplier、accumulator和combiner，其语义和Collector接口的相应方法返回的函数完全相同。
+~~~java
+List<Dish> dishes = menuStream.collect(
+                        ArrayList::new,
+                        List::add,
+                        List::addAll);
+~~~
+我们认为，这第二种形式虽然比前一个写法更为紧凑和简洁，却不那么易读。此外，以恰当的类来实现自己的自定义收集器有助于重用并可避免代码重复。另外值得注意的是，这第二个collect方法不能传递任何Characteristics，所以它永远都是一个IDENTITY_FINISH和CONCURRENT但并非UNORDERED的收集器。

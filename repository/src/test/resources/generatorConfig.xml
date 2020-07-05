@@ -43,8 +43,8 @@
                             targetProject=".\src\test\java">
             <!-- 是否允许子包 -->
             <property name="enableSubPackages" value="false" />
-            <!-- 是否对modal添加构造函数 -->
-            <property name="constructorBased" value="true" />
+            <!-- 是否对modal添加构造函数，这里传true的话xml就是用construct和arg节点，且entity中有构造函数-->
+            <property name="constructorBased" value="false" />
             <!-- 是否清理从数据库中查询出的字符串左右两边的空白字符 -->
             <property name="trimStrings" value="true" />
             <!-- 建立modal对象是否不可改变 即生成的modal对象不会有setter方法，只有构造方法 -->
@@ -68,6 +68,8 @@
                enableCountByExample="false" enableUpdateByExample="false"
                enableDeleteByExample="false" enableSelectByExample="false"
                selectByExampleQueryId="false">
+            <!-- 不加这个的话，如果前面javaModelGenerator的constructorBased仍为true会增加构造函数-->
+            <!--<property name="constructorBased" value="false"/>-->
         </table>
     </context>
 </generatorConfiguration>

@@ -13,18 +13,6 @@ public class UserEntity {
 
     private BigDecimal money;
 
-    public UserEntity(Integer id, String name, String sex, String description, BigDecimal money) {
-        this.id = id;
-        this.name = name;
-        this.sex = sex;
-        this.description = description;
-        this.money = money;
-    }
-
-    public UserEntity() {
-        super();
-    }
-
     public Integer getId() {
         return id;
     }

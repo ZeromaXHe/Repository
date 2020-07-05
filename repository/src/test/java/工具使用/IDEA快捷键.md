@@ -11,3 +11,5 @@
 `Ctrl + Home` 文件开始的位置 / `Ctrl + End` 文件末尾的位置
 
 `Ctrl + Alt + S` 设置
+
+`Ctrl + Q` 查看方法说明javadoc注释

@@ -9,3 +9,5 @@
 `F2` 下一处错误 / `Shift + F2` 上一处错误
 
 `Ctrl + Home` 文件开始的位置 / `Ctrl + End` 文件末尾的位置
+
+`Ctrl + Alt + S` 设置

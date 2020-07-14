@@ -13,3 +13,7 @@
 `Ctrl + Alt + S` 设置
 
 `Ctrl + Q` 查看方法说明javadoc注释
+
+`Ctrl + F12` 搜索类中方法
+
+`Alt + ⬆/⬇` 查看上/下一个方法

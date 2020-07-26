@@ -251,3 +251,379 @@ public class DemoApplication {
 
 所有的SpringBoot无论怎么定制，本质上与上面的启动类代码是一样的，而以上代码示例中，Annotation定义（@SpringBootApplication）和类定义（SpringApplication.run）最为耀眼。那么，要揭开SpringBoot应用的奥秘，很明显的，我们只要先从这两位开始就可以了。
 
+## 3.2 @SpringBootApplication背后的秘密
+
+@SpringBootApplication是一个“三体”结构，实际上它是一个复合Annotation：
+
+~~~java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@Configuration
+@EnableAutoConfiguration
+@ComponentScan
+public @interface SpringBootApplication {
+    ...
+}
+~~~
+
+虽然它的定义使用了多个Annotation进行元信息标注，但实际上对于SpringBoot应用来说，重要的只有三个Annotation,而“三体”结构实际上指的就是这三个Annotation：
+- @Configuration
+- @EnableAutoConfiguration
+- @ComponentScan
+
+所以，如果我们使用如下的SpringBoot启动类，整个SpringBoot应用依然可以与之前的启动类功能对等：
+~~~java
+@Configuration
+@EnableAutoConfiguration
+@ComponentScan
+public class DemoApplication {
+    public static void main(String[] args){
+        SpringApplication.run(DemoApplication.class, args);
+    }
+}
+~~~
+
+但每次都写这三个Annotation显然过于繁琐，所以写一个@SpringBootApplication这样的一站式复合Annotation显然更方便一些。
+
+### 3.2.1 @Configuration创世纪
+
+这里的@Configuration对我们来说并不陌生，它就是JavaConfig形式的Spring IoC容器的配置类使用的那个@Configuration，既然SpringBoot应用骨子里就是一个Spring应用，那么，自然也需要加载某个IoC容器的配置，而SpringBoot社区推荐使用基于JavaConfig的配置形式，所以，很明显，这里的启动类标注了@Configuration之后，本身其实也是一个IoC容器的配置类！
+
+很多SpringBoot的代码示例都喜欢在启动类上直接标注@Configuration或@SpringBootApplication，对于初接触SpringBoot的开发者来说，其实这种做法不便于理解，如果我们将上面的SpringBoot启动类拆分为两个独立的Java类，整个形式就明朗了：
+~~~java
+@Configuration
+@EnableAutoConfiguration
+@ComponentScan
+public class DemoConfiguration {
+    @Bean
+    public Controller controller(){
+        return new Controller();
+    }
+}    
+
+public class DemoApplication
+    public static void main(String[] args){
+        SpringApplication.run(DemoConfiguration.class, args);
+    }
+}
+~~~
+
+所以，启动类DemoApplication其实就是一个标准的Standalone类型Java程序的main函数启动类，没有什么特殊的。
+
+而@Configuration标注的DemoConfiguration定义其实也是一个普通的JavaConfig形式的IoC容器配置类，没啥新东西，全是Spring框架里的概念！
+
+### 3.2.2 @EnableAutoConfiguration的功效
+
+@EnableAutoConfiguration其实也没啥“创意”，各位是否还记得Spring框架提供的各种名字为@Enable开头的Annotation定义？比如@EnableScheduling、@EnableCaching、@EnableMBeanExport等，@EnableAutoConfiguration的理念和“做事方式”其实一脉相承，简单概括一下就是，借助@Import的支持，收集和注册特定场景相关的bean定义：
+- @EnableScheduling 是通过@Import将Spring调度框架相关的bean定义都加载到IoC容器。
+- @EnableMBeanExport是通过@Import将JMX相关的bean定义加载到IoC容器。
+
+而@EnableAutoConfiguration也是借助@Import的帮助，将所有符合自动配置条件的bean定义加载到IoC容器，仅此而已！
+
+@EnableAutoConfiguration作为一个复合Annotation，其自身定义关键信息如下：
+~~~java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Inherited
+@AutoConfigurationPackage
+@Import(EnableAutoConfigurationImportSelector.class)
+public @interface EnableAutoConfiguration {
+    ...
+}
+~~~
+
+其中，最关键的要属@Import(EnableAutoConfigurationImportSelector.class)，借助EnableAutoConfigurationImportSelector，@EnableAutoConfiguration可以帮助SpringBoot应用将所有符合条件的@Configuration配置都加载到当前SpringBoot创建并使用的IoC容器，就跟一只“八爪鱼”一样。
+
+借助于Spring框架原有的一个工具类：SpringFactoriesLoader的支持，@EnableAutoConfiguration可以“智能”地自动配置功效才得以大功告成！
+
+**自动配置的幕后英雄：SpringFactoriesLoader详解**
+
+SpringFactoriesLoader属于Spring框架私有的一种扩展方案（类似于Java的SPI方案java.util.ServiceLoader),其主要功能就是从指定的配置文件META-INF/spring.factories加载配置，spring.factories是一个典型的java properties文件，配置的格式为Key = Value形式，只不过Key和Value都是Java类型的完整类名（Full qualified name），比如：
+
+`example.MyService=example.MyServiceImpl,example.MyServiceImpl2`
+
+然后框架就可以根据某个类型作为Key来查找对应的类型名称列表了：
+
+~~~java
+public abstract class SpringFactoriesLoader {
+    //...
+    public static <T> List<T> loadFactories(Class<T> factoryClass, ClassLoader classLoader) {
+        ...
+    }
+    
+    public static List<String> loadFactoryNames(Class<?> factoryClass, ClassLoader classLoader){
+        ...
+    }
+    //,,,
+}
+~~~
+
+对于@EnableAutoConfiguration来说，SpringFactoriesLoader的用途稍微不同一些，其本意是为了提供SPI扩展的场景，而在@EnableAutoConfiguration的场景中，它更多是提供了一种配置查找的功能支持，即根据@EnableAutoConfiguration的完整类名org.springframework.boot.autoconfigure.EnableAutoConfiguration作为查找的Key，获取对应的一组@Configuration类
+
+所以，@EnableAutoConfiguration自动配置的魔法其实就变成了：从classpath中搜寻所有META-INF/spring.factories配置文件，并将其中org.springframework.boot.autoconfigure.EnableAutoConfiguration对应的配置项通过反射（Java Reflection）实例化为对应的标注了@Configuration的JavaConfig形式的IoC容器配置类，然后汇总为一个并加载到IoC容器。
+
+目前为止，还是Spring框架的原有概念和支持，依然没有“新鲜事”！
+
+### 3.2.3 可有可无的@ComponentScan
+
+为啥说@ComponentScan是可有可无的？因为原则上来说，作为Spring框架里的“老一辈革命家”，@ComponentScan的功能其实就是自动扫描并加载符合条件的组件或bean定义，最终将这些bean定义加载到容器中。加载bean定义到Spring的IoC容器，我们可以手工单个注册，不一定非要通过批量的自动扫描完成，所以说@ComponentScan是可有可无的。
+
+对于SpringBoot应用来说，同样如此，比如我们本章的启动类。如果我们当前应用没有任何bean定义需要通过@ComponentScan加载到当前SpringBoot应用对应使用的IoC容器，那么，除去@ComponentScan的声明，当前SpringBoot应用依然可以照常运行，功能对等！
+
+看，还是没有啥新东西！
+
+## 3.3 SpringApplication：SpringBoot程序启动的一站式解决方案
+
+如果非说SpringBoot微框架提供了点儿自己特有的东西，在核心类层面（各种场景下的自动配置一站式插拔模块，我们下一章再重点介绍），也就是SpringApplication了。
+
+SpringApplication将一个典型的Spring应用启动的流程“模板化”（这里是动词），在没有特殊需求的情况下，默认模板化后的执行流程就可以满足需求了；但有特殊需求也没关系，SpringApplication在合适的流程结点开放了一系列不同类型的扩展点，我们可以通过这些扩展点对SpringBoot程序的启动和关闭过程进行扩展。
+
+最“肤浅”的扩展或者配置是SpringApplication通过一系列设置方法（setters)开放的定制方式，比如，我们之前的启动类的main方法中只有一句:
+
+`SpringApplication.run(DemoApplication.class, args);`
+
+但如果我们想通过SpringApplication的一系列设置方法来扩展启动行为，则可以用如下方式进行：
+
+~~~java
+public class DemoApplication{
+    public static void main(String[] args){
+        //SpringApplication.run(DemoConfiguration.class, args);
+
+        SpringApplication bootstrap = new SpringApplication(DemoConfiguration.class);
+        bootstrap.setBanner(new Banner(){
+            @Override
+            public void printBanner(Environment environment, Class<?> aClass, PrintStream printStream) {
+                //比如打印一个我们喜欢的ASCII Arts字符画
+            }
+        });
+        bootstrap.setBannerMode(Banner.Mode.CONSOLE);
+        // 其他定制设置 ...
+        bootstrap.run(args);
+    }
+}
+~~~
+
+>设置自定义banner最简单的方式其实是把ASCII Art字符画放到一个资源文件，然后通过ResourceBanner来加载：bootstrap.setBanner(new ResourceBanner(new ClassPathResource("banner.txt")));
+
+### 3.3.1 深入探索SpringApplication执行流程
+
+SpringApplication的run方法的实现是我们本次旅程的主要线路，该方法的主要流程大体可以归纳如下：
+
+1） 如果我们使用的是SpringApplication的静态run方法，那么，这个方法里面首先需要创建一个SpringApplication对象实例，然后调用这个创建好的SpringApplication的实例run方法。在SpringApplication实例初始化的时候，它会提前做几件事情：
+- 根据classpath里面是否存在某个特征类（org.springframework.web.context.ConfigurationWebApplicationContext)来决定是否应该创建一个为Web应用使用的ApplicationContext类型，还是应该创建一个标准Standalone应用使用的ApplicationContext类型。
+- 使用SpringFactoriesLoader在应用的classpath中查找并加载所有可用的ApplicationContextInitializer。
+- 使用SpringFactoriesLoader在应用的classpath中查找并加载所有可用的ApplicationListener。
+- 推断并设置main方法的定义类。
+
+2）SpringApplication实例初始化完成并且完成设置后，就开始执行run方法的逻辑了，方法执行伊始，首先遍历执行所有通过SpringFactoriesLoader可以查找到并加载的SpringApplicationRunListener，调用它们的started()方法，告诉这些SpringApplicationRunListener，“嘿，SpringBoot应用要开始执行咯！”。
+
+3）创建并配置当前SpringBoot应用将要使用的Environment（包括配置要使用的PropertySource以及Profile）。
+
+4）遍历调用所有SpringApplicationRunListener的environmentPrepared()的方法，告诉它们：“当前SpringBoot应用使用的Environment准备好咯！”
+
+5）如果SpringApplication的showBanner属性被设置为true，则打印banner（SpringBoot 1.3.x版本，这里应该是基于Banner.Mode决定banner的打印行为）。这一步的逻辑其实可以不关心，我认为唯一的用途就是“好玩”（Just For Fun）。
+
+6）根据用户是否明确设置了applicationContextClass类型以及初始化阶段的推断结果，决定该为当前SpringBoot应用创建什么类型的ApplicationContext并创建完成，然后根据条件决定是否添加ShutdownHook，决定是否使用自定义的BeanNameGenerator，决定是否使用自定义的ResourceLoader，当然，最重要的，将之前准备好的Environment设置给创建好的ApplicationContext使用。
+
+7）ApplicationContext创建好之后，SpringApplication会再次借助SpringFactoriesLoader，查找并加载classpath中所有可用的ApplicationContextInitializer，然后遍历调用这些ApplicationContextInitializer的initialize(applicationContext)方法来对已经创建好的ApplicationContext进行进一步的处理。
+
+8）遍历调用所有SpringApplicationRunListener的contextPrepared()方法,通知它们：“SpringBoot应用使用的ApplicationContext准备好啦！”
+
+9）最核心的一步，将之前通过@EnableAutoConfiguration获取的所有配置以及其他形式的IoC容器配置加载到已经准备完毕的ApplicationContext。
+
+10）遍历调用所有SpringApplicatuionRunListener的contextLoaded()方法，告知所有SpringApplicationRunListener，ApplicationContext“装填完毕”！
+
+11）调用ApplicationContext的refresh()方法，完成IoC容器可用的最后一道工序。
+
+12）查找当前ApplicationContext中是否注册有CommandLineRunner，如果有，则遍历执行它们。
+
+13）正常情况下，遍历执行SpringApplicationRunListener的finished()方法，告知它们：“搞定！”。（如果整个过程出现异常，则依然调用所有SpringApplicationRunListener的finished()方法，只不过这种情况下会将异常信息一并传入处理）。
+
+至此，一个完整的SpringBoot应用启动完毕！
+
+整个过程看起来冗长无比，但其实很多都是一些事件通知的扩展点，如果我们将这些逻辑暂时忽略，那么其实整个SpringBoot应用启动的逻辑就可以压缩到极其精简的几步：
+
+- 开始
+- 收集各种条件和回调接口，例如，ApplicationContextInitializer、ApplicationListener
+    - 通告started()
+- 创建并准备Environment
+    - 通告environmentPrepared()
+- 创建并初始化ApplicationContext 例如，设置Environment，加载配置等
+    - 通告contextPrepared()
+    - 通告contextLoaded()
+- refresh ApplicationContext 完成最终程序启动
+    - 执行CommandLineRunner
+    - 通告finished()
+- 结束
+
+前后对比我们就可以发现，其实SpringApplication提供的这些各类拓展点近乎“喧宾夺主”，占据了一个Spring应用启动逻辑的大部分“江山”，除了初始化并准备好ApplicationContext，剩下的大部分工作都是通过这些扩展点完成的，所以，我们有必要对各类扩展点进行逐一剖析，以便在需要的时候可以信手拈来，为我所用。
+
+### 3.3.2 SpringApplicationRunListener
+
+SpringApplicationRunListener是一个只有SpringBoot应用的main方法执行过程中接收不同执行时点事件通知的监听者：
+~~~java
+public interface SpringApplicationRunListener {
+    void started();
+    void environmentPrepared(ConfigurableEnvironment environment);
+    void contextPrepared(ConfigurableApplicationContext context);
+    void contextLoaded(ConfigurableApplicationContext context);
+    void finished(ConfigurableApplicationContext context, Throwable exception);
+}
+~~~
+
+对于我们来说，基本没什么常见的场景需要自己实现一个SpringApplicationRunListener，即使SpringBoot默认也只是实现了一个org.springframework.boot.context.event.EventPublishingRunListener,用于在SpringBoot启动的不同时点发布不同的应用事件类型（ApplicationEvent），如果有哪些ApplicationListener对这些应用事件感兴趣，则可以接收并处理。（还记得SpringApplication实例初始化的时候加载了一批ApplicationListener，但是在run方法执行流程中却没有被使用的丝毫痕迹吗？EventPublishingRunListener就是答案！）
+
+假如我们真的有场景需要自定义一个SpringApplicationRunListener实现，那么有一点需要注意，即任何一个SpringApplicationRunListener实现类的构造方法（Constructor）需要有两个构造参数，一个构造参数的类型就是我们的org.springframework.boot.SpringApplication,另外一个就是args参数列表的String[]:
+~~~java
+public class DemoSpringApplicationRunListener implements SpringApplicationRunListener {
+    @Override
+    public void started() {
+        // do whatever you want to do
+    }
+
+    @Override
+    public void environmentPrepared(ConfigurableEnvironment environment) {
+        // do whatever you want to do
+    }
+
+    @Override
+    public void contextPrepared(ConfigurableApplicationContext context){
+        // do whatever you want to do
+    }
+
+    @Override
+    public void contextLoaded(ConfigurableApplicationContext context){
+        // do whatever you want to do
+    }
+
+    @Override
+    public void finished(ConfigurableApplicationContext context, Throwable exception) {
+        // do whatever you want to do
+    }
+}
+~~~
+
+之后，我们可以通过SpringFactoriesLoader立下的规矩，在当前SpringBoot应用的classpath下的META-INF/spring.factories文件中进行类似如下的配置：
+~~~properties
+org.springframework.boot.SpringApplicationRunListener=\
+  com.keevol.springboot.demo.DemoSpringApplicationRunListener
+~~~
+然后SpringApplication就会在运行的时候调用它啦！
+
+### 3.3.3 ApplicationListener
+
+ApplicationListener其实时老面孔，属于Spring框架对Java中实现的监听者模式的一种框架实现，这里唯一值得着重强调的是，对于初次接触SpringBoot，但对Spring框架本身又没有过多接触的开发者来说，可能会将这个名字与SpringApplicationRunListener混淆。
+
+如果我们要为SpringBoot应用添加自定义的ApplicationListener，有两种方式：
+
+1）通过SpringApplication.addListeners(...)或者SpringApplication.setListeners(...)方法添加一个或者多个自定义的ApplicationListener;
+
+2）借助SpringFactoriesLoader机制，在META-INF/spring.factories文件中添加配置（以下代码是为SpringBoot默认注册的ApplicationListener配置）：
+~~~properties
+org.springframework.context.ApplicationListener=\
+  org.springframework.boot.builder.ParentContextCloserApplicationListener,\
+  org.springframework.boot.cloudfoundry.VcapApplicationListener,\
+  org.springframework.boot.context.FileEncodingApplicationListener,\
+  org.springframework.boot.context.config.AnsiOutputApplicationListener,\
+  org.springframework.boot.context.config.ConfigFileApplicationListener,\
+  org.springframework.boot.context.config.DelegatingApplicationListener,\
+  org.springframework.boot.liquibase.LiquibaseServiceLocatorApplicationListener,\
+  org.springframework.boot.logging.ClasspathLoggingApplicationListener,\
+  org.springframework.boot.logging.LoggingApplicationListener
+~~~
+
+### 3.3.4 ApplicationContextInitializer
+
+ApplicationContextInitializer也是Spring框架原有的概念，这个类的主要目的就是在ConfigurableApplicationContext类型（或者子类型）的ApplicationContext做refresh之前，允许我们对ConfigurableApplicationContext实例做进一步的设置或者处理。
+
+实现一个ApplicationContextInitializer很简单，因为它只有一个方法需要实现：
+~~~java
+public class DemoApplicationContextInitializer implements ApplicationContextInitializer {
+    @Override
+    public void initialize(ConfigurableApplicationContext applicationContext){
+        // do whatever you want with applicationContext
+        // e.g. applicationContext.registerShutdownHook();
+    }
+}
+~~~
+
+不过，一般情况下我们基本不会需要自定义一个ApplicationContextInitializer,即使SpringBoot框架默认也只是注册了三个实现：
+~~~properties
+org.springframework.context.ApplicationContextInitializer=\
+  org.springframework.boot.context.ConfigurationWarningApplicationContextInitializer,\
+  org.springframework.boot.context.ContextIdApplicationContextInitializer,\
+  org.springframework.boot.context.config.DelegatingApplicationContextInitializer
+~~~
+
+如果我们真的需要自定义一个ApplicationContextInitializer，那么只要像上面这样，通过SpringFactoriesLoader机制进行配置，或者通过SpringApplication.addInitializers(...)设置即可。
+
+### 3.3.5 CommandLineRunner
+
+CommandLineRunner不是Spring框架原有的“宝贝”，它属于SpringBoot应用特定的回调扩展接口：
+~~~java
+public interface CommandLineRunner {
+    void run(String... args) throws Exception;
+}
+~~~
+
+CommandLineRunner需要大家关注的其实就两点：
+
+1）所有CommandLineRunner的执行时点在SpringBoot应用的ApplicationContext完全初始化开始工作之后（可以认为是main方法执行完成之前最后一步）。
+
+2）只要存在于当前SpringBoot应用的ApplicationContext中的任何CommandLineRunner，都会被加载执行（不管你是手动注册这个CommandLineRunner到IoC容器，还是自动扫描进去的）。
+
+与其他几个扩展点接口类型相似，建议CommandLineRunner的实现类使用@org.springframework.core.annotation.Order进行标注或者实现org.springframework.core.Ordered接口，便于对它们的执行顺序进行调整，这其实十分重要，我们不希望顺序不当的CommandLineRunner实现类阻塞了后面其他CommandLineRunner的执行。
+
+CommandLineRunner是很好的扩展接口，大家可以重点关注，我们在后面的扩展和微服务实践章节会再次遇到它。
+
+## 3.4 再谈自动配置
+
+此前我们讲到，@EnableAutoConfiguration可以借助SpringFactoriesLoader这个特性将标注了@Configuration的JavaConfig类“一股脑儿”的汇总并加载到最终的ApplicationContext，不过，这其实只是“简化版”的说明，实际上，基于@EnableAutoConfiguration的自动配置功能拥有更加强大的调控能力，通过配合比如基于条件的配置能力或者调整加载顺序，我们可以对自动配置进行更加细粒度的调整和控制。
+
+### 3.4.1 基于条件的自动配置
+
+基于条件的自动配置来源于Spring框架中“基于条件的配置”这一特性。在Spring框架中，我们可以使用@Conditional这个Annotation配合@Configuration或者@Bean等Annotation来干预一个配置或者bean定义是否能够生效，其最终实现的效果或者语义类似于如下伪代码：
+~~~java
+if(符合@Conditional规定的条件){
+    加载当前配置或者注册当前bean定义;
+}
+~~~
+
+要实现基于条件的配置，我们只要通过@Conditional指定自己的Condition实现类就可以了（可以应用于类型Type的标注或者方法Method的标注）：
+
+`@Conditional({MyCondition1.class, MyCondition2.class, ...})`
+
+最主要的是，@Conditional可以作为一个Meta Annotation用来标注其他Annotation实现类，从而构建各色的复合Annotation，比如SpringBoot的autoconfigure模块就基于这一优良的革命传统，实现了一批这样的Annotation（位于org.springframework.boot.autoconfigure.condition包下）：
+- @ConditionalOnClass
+- @ConditionalOnBean
+- @ConditionalOnMissingClass
+- @ConditionalOnMissingBean
+- @ConditionalOnProperty
+- ......
+
+有了这些复合Annotation的配合，我们就可以结合@EnableAutoConfiguration实现基于条件的自动配置了。
+
+SpringBoot能够风靡，很大一部分功劳需要归功于它预先提供的一系列自动配置的依赖模块，而这些依赖模块都是基于以上@Conditional复合Annotation实现的，这也意味着所有的这些依赖模块都是按需加载的，只有符合某些特定条件，这些依赖模块才会生效，这也就是我们所谓的“智能”自动配置。
+
+### 3.4.2 调整自动配置的顺序
+
+在实现自动配置的过程中，除了可以提供基于条件的配置，我们还可以对当前要提供的配置或者组件的加载顺序进行相应调整，从而让这些配置或者组件之间的依赖分析和组装可以顺利完成。
+
+我们可以使用@org.springframework.boot.autoconfigure.AutoConfigureBefore或者@org.springframework.boot.autoconfigure.AutoConfigureAfter让当前配置或者组件在某个其他组件之前或者之后进行，比如，假设我们希望某些JMX操作相关的bean定义在MBeanServer配置完成之后进行，那么我们就可以提供一个类似如下的配置：
+
+~~~java
+@Configuration
+@AutoConfigureAfter(JmxAutoConfiguration.class)
+public class AfterMBeanServerReadyConfiguration {
+    @Autowired
+    MBeanServer mBeanServer;
+    
+    // 通过@Bean添加必要的bean定义
+}
+~~~
+
+# 第4章 了解纷杂的spring-boot-starter
+

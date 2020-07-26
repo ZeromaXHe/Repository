@@ -627,3 +627,32 @@ public class AfterMBeanServerReadyConfiguration {
 
 # 第4章 了解纷杂的spring-boot-starter
 
+我认为，SpringBoot微框架从两个主要层面影响Spring社区的开发者们：
+
+1）基于Spring框架的“约定优先于配置（COC）”理念以及最佳实践之路
+
+2）提供了针对日常企业应用研发各种场景的spring-boot-starter自动配置依赖模块，如此多“开箱即用”的依赖模块，使得开发各种场景的Spring应用更加快速和高效。
+
+SpringBoot提供的这些“开箱即用”的依赖模块都约定以spring-boot-starter-作为命名的前缀，并且皆位于org.springframework.boot包或者命名空间下（虽然SpringBoot官方参考文档中提到不建议大家使用spring-boot-starter-来命名自己写的类似的自动配置依赖模块，但实际上，配合不同的groupId，这不应该是什么问题）。
+
+如果我们访问http://start.spring.io，并单击“Switch to the full version”链接，就会发现SpringBoot1.3.1默认支持和提供了大约80多个自动配置依赖模块。
+
+鉴于数量如此之多，并且也不是所有人都会在任何一个应用中用到所有，我只会就几个常见的通用spring-boot-starter模块进行讲解，希望大家可以举一反三，灵活应用所有日后工作过程中将会用到的那些spring-boot-starter模块。
+
+所有的spring-boot-starter都有约定俗成的默认配置，但允许我们调整这些配置以改变默认的配置行为，即“约定优先于配置”。
+
+简单来讲，我们可以将对SpringBoot的行为可以进行干预的配置方式划分为几类：
+- 命令行参数（Command Line Args）。
+- 系统环境变量（Environment Variables）。
+- 位于文件系统中的配置文件
+- 位于classpath中的配置文件。
+- 固化到代码中的配置项。
+
+为了简化，其他比较少见场景的配置方式不在这里罗列。总的来说，以上几种方式安照优先级从高到低排列，高优先级方式提供的配置项可以覆盖或者优先生效，比如通过命令行参数传入的配置项会覆盖通过环境变量传入的同一配置项，当然也会覆盖其他后面几种方式给出的同一配置项。
+
+不管是位于文件系统还是classpath，SpringBoot应用默认的配置文件名叫作application.properties，可以直接放在当前项目的根目录下或者名称为config的子目录下。
+
+以上是关于SpringBoot应用配置方式的简单介绍，基本可以满足我们后面讲解的需要，所以，现在让我们进入纷杂的spring-boot-starter探索之旅吧！
+
+## 4.1 应用日志和spring-boot-starter-logging
+

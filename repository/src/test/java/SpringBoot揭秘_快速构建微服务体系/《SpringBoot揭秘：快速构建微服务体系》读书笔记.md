@@ -656,3 +656,232 @@ SpringBoot提供的这些“开箱即用”的依赖模块都约定以spring-boo
 
 ## 4.1 应用日志和spring-boot-starter-logging
 
+java的日志系统多种多样，从java.util默认提供的日志支持，到log4j，log4j2，commons logging等，复杂繁多，所以，应用日志系统的配置就会比较特殊，从而spring-boot-starter-logging也比较特殊一些，下面将其作为我们第一个了解的自动配置依赖模块。
+
+加入maven依赖中添加了spring-boot-starter-logging：
+
+~~~xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-logging</artifactId>
+</dependency>
+~~~
+
+那么，我们的SpringBoot应用将自动使用logback作为应用日志框架，SpringBoot启动的时候，由org.springframework.boot.Logging-Application-Listener根据情况初始化并使用。
+
+SpringBoot为我们提供了很多默认的日志配置，所以，只要将spring-boot-starter-logging作为依赖加入到当前应用的classpath，则“开箱即用”，不需要做任何多余的配置，但假设我们要对默认SpringBoot提供的应用日志设定做调整，则可以通过几种方式进行配置调整：
+- 遵循logback的约定，在classpath中使用自己定制的logback.xml配置文件。
+- 在文件系统中任何一个位置提供自己的logback.xml配置文件，然后通过logging.config配置项指向这个配置文件来启动它，比如在application.properties中指定如下的配置。
+`logging.config=/{some.path.you.defined}/any-logfile-name-I-like.log`
+
+> SpringBoot 默认允许我们通过在配置文件或者命令行等方式使用logging.file和logging.path来自定义日志文件的名称和存放路径，不过，这只是允许我们在SpringBoot框架预先定义的默认日志系统设定的基础上做有限的设置，如果我们希望更灵活的配置，最好通过框架特定的配置方式提供相应的配置文件，然后通过logging.config来启用。
+
+如果大家更习惯使用log4j或者log4j2，那么也可以采用类似的方式将它们对应的spring-boot-starter依赖模块加到Maven依赖中即可：
+~~~xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-log4j</artifactId>
+</dependency>
+~~~
+或者
+~~~xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-log4j2</artifactId>
+</dependency>
+~~~
+但一定不要将这些完成同一目的的spring-boot-starter都加到依赖中。
+
+## 4.2 快速Web应用开发与spring-boot-starter-web
+
+在这个互联网时代，使用Spring框架除了开发少数的独立应用，大部分情况下实际上在使用SpringMVC开发web应用，为了帮我们简化快速搭建并开发一个Web项目，SpringBoot为我们提供了spring-boot-starter-web自动配置模块。
+
+只要将spring-boot-starter-web加入项目的maven依赖：
+~~~xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+~~~
+
+我们就得到了一个直接可执行的Web应用，当前项目下运行mvn spring-boot:run就可以直接启动一个使用了嵌入式tomcat服务请求的Web应用，只不过，我们还没有提供任何服务Web请求的Controller，所以，访问任何路径都会返回一个SpringBoot默认提供的错误页面（一般称其为whitelabel error page），我们可以在当前项目下新建一个服务根路径Web请求的Controller实现：
+~~~java
+@RestController
+public class IndexController {
+    @RequestMapping("/")
+    public String index(){
+        return "hello, there";
+    }
+}
+~~~
+
+重新运行 mvn spring-boot:run 并访问 http://localhost:8080，错误页面将被我们的Controller返回的消息所替代，一个简单的Web应用就这样完成了。
+
+但是，简单的背后，其实却有很多“潜规则”（约定），我们只有充分了解了这些“潜规则”，才能更好地应用spring-boot-starter-web。
+
+### 4.2.1 项目结构层面地约定
+
+项目结构层面与传统打包为war的Java Web应用的差异在于，静态文件和页面模板的存放位置变了，原来是放在src/main/webapp目录下的一系列资源，现在都统一放在src/main/resources相应子目录下，比如：
+
+1）src/main/resources/static用于存放各类静态资源，比如css,js等。
+
+2）src/main/resources/templates用于存放模板文件，比如*.vm。
+
+> 当然，如果还是希望以war包的形式，而不是SpringBoot推荐使用的独立jar包形式发布Web应用，也可以继续原来Java Web应用的项目结构预定。
+
+### 4.2.2 SpringMVC 框架层面的约定和定制
+
+spring-boot-starter-web 默认将为我们自动配置如下一些SpringMVC必要组件：
+- 必要的ViewResolver，比如ContentNegotiatingViewResolver和BeanNameViewResolver。
+- 将必要的Converter、GenericConverter和Formatter等bean注册到IoC容器。
+- 添加一系列的HttpMessageConverter以便支持对Web请求和相应的类型转换。
+- 自动配置和注册MessageCodesResolver。
+- 其他。
+
+任何时候，如果我们对默认提供的SpringMVC组件设定不满意，都可以在IoC容器中注册新的同类型的bean定义来替换，或者直接提供一个基于WebMvcConfigurerAdapter类型的bean定义来定制，甚至直接提供一个标注了@EnableWebMvc的@Configuration配置类完全接管所有SpringMVC的相关配置，自己完全重新配置。
+
+### 4.2.3 嵌入式Web容器层面的约定和定制
+
+spring-boot-starter-web默认使用嵌入式tomcat作为web容器对外提供HTTP服务，默认将使用8080端口对外监听和提供服务：
+
+1）假设我们不想使用默认的嵌入式tomcat（spring-boot-starter-tomcat自动配置模块），那么可以引入spring-boot-starter-jetty或者spring-boot-starter-undertow作为替代方案。
+
+2）假设我们不想使用默认的8080端口，那么我们可以通过更改配置项server.port使用自己指定的端口，比如：
+~~~properties
+server.port=9000
+~~~
+spring-boot-starter-web 提供了很多以`server.`为前缀的配置项用于对嵌入式Web容器提供配置，比如：
+- server.port
+- server.address
+- server.ssl.*
+- server.tomcat.*
+
+如果这些依然无法满足需求，SpringBoot甚至允许我们直接对嵌入式的Web容器实例进行定制，这可以通过向IoC容器中注册一个EmbeddedServletContainerCustomizer类型的组件来对嵌入式Web容器进行定制：
+~~~java
+public class UnveilSpringEmbeddedTomcatCustomizer implements EmbeddedServletContainerCustomizer {
+    @Override
+    public void customize(ConfigurableEmbeddedServletContainer container) {
+        container.setPort(9999);
+        container.setContextPath("/unveil-spring-chapter3");
+        // ...
+    }
+}
+~~~
+
+再深入的定制则需要针对特定的嵌入式Web容器，使用实现对应的Factory并注册到IoC容器：
+- TomcatEmbeddedServletContainerFactory
+- JettyEmbeddedServletContainerFactory
+- UndertowEmbeddedServletContainerFactory
+
+但是，笔者认为大家几乎没有走到这一步的必要，而且建议最好也不要走到这一步，目前来看，spring-boot-starter-web提供的配置项列表已经是最简单和完备的定制方式了。
+
+## 4.3 数据访问与spring-boot-starter-jdbc
+
+大部分Java应用都需要访问数据库，尤其是服务层，所以，SpringBoot会为我们自动配置相应的数据访问设施。
+
+若想SpringBoot为我们自动配置数据访问的基础设施，那么，我们需要直接或者间接地依赖spring-jdbc，一旦spring-jdbc位于我们SpringBoot应用的classpath，即会触发数据访问相关的自动配置行为，最简单的做法就是把spring-boot-starter-jdbc加为应用的依赖。
+
+默认情况下，如果我们没有配置任何DataSource，那么，SpringBoot会为我们自动配置一个基于嵌入式数据库的DataSource，这种自动配置行为其实很适合于测试场景，但对实际的开发帮助不大，基本上我们会自己配置一个DataSource实例，或者通过自动配置模块提供的配置参数对DataSource实例进行自定义的配置。
+
+假设我们的SpringBoot应用只依赖一个数据库，那么，使用DataSource自动配置模块提供的配置参数是最方便的：
+~~~properties
+spring.datasource.url=jdbc:mysql://{database host}:3306/{databaseName}
+spring.datasource.username={database username}
+spring.datasource.password={database password}
+~~~
+
+当然，自己配置一个DataSource也是可以的，SpringBoot也会智能地选择我们自己配置的这个DataSource实例（只不过必要性真不大）。
+
+除了DataSource会自动配置，SpringBoot还会自动配置相应的JdbcTemplate、DataSourceTransactionManager等关联”设施“，可谓服务周到，我们只要在使用的地方注入就可以了：
+~~~java
+class SomeDao{
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+    
+    public <T> List<T> queryForList(String sql){
+        // ...
+    }
+
+    // ...
+}
+~~~
+
+不过，spring-boot-starter-jdbc以及与其相关的自动配置也不总是带来便利，在某些场景下，我们可能会在一个应用中需要依赖和访问多个数据库，这个时间就会出现问题了。
+
+假设我们在ApplicationContext中配置了多个DataSource实例指向多个数据库：
+~~~java
+@Bean
+public DataSource dataSource1() throws Throwable {
+    DruidDataSource dataSource = new DruidDataSource();
+    dataSource.setUrl(...);
+    dataSource.setUsername(...);
+    dataSource.setPassword(...);
+    // TODO other settings if necessary in the future.
+    return dataSource;
+}
+
+@Bean
+public DataSource dataSource2() throws Throwable {
+    DruidDataSource dataSource = new DruidDataSource();
+    dataSource.setUrl(...);
+    dataSource.setUsername(...);
+    dataSource.setPassword(...);
+    // TODO other settings if necessary in the future.
+    return dataSource;
+}
+~~~
+
+那么，不好意思，启动SpringBoot应用的时候会抛出类似如下的异常（Exception）：
+~~~
+No qualifying bean of type [javax.sql.DataSource] is defined:
+expected single matching bean but found 2
+~~~
+
+为了避免这种情况的发生，我们需要在SpringBoot的启动类上做点儿”手脚“：
+~~~java
+@SpringBootApplication(exclude = {
+    DataSourceAutoConfiguration.class,
+    DataSourceTransactionManagerAutoConfiguration.class
+})
+public class UnveilSpringChapter3Application{
+    public static void main(String[] args) {
+        SpringApplication.run(UnveilSpringChapter3Application.class, args);
+    }
+}
+~~~
+
+也就是说，我们需要在这种场景下排除掉对SpringBoot默认提供的DataSource相关的自动配置。
+
+但如果我们还是想要享受SpringBoot提供的自动配置DataSource的机能，也可以通过为其中一个DataSource配置添加org.springframework.context.annotation.Primary这个Annotation的方式以实现两全其美：
+~~~java
+@Bean
+@Primary
+public DataSource dataSource1() throws Throwable {
+    DruidDataSource dataSource = new DruidDataSource();
+    dataSource.setUrl(...);
+    dataSource.setUsername(...);
+    dataSource.setPassword(...);
+    // TODO other settings if necessary in the future.
+    return dataSource;
+}
+
+@Bean
+public DataSource dataSource2() throws Throwable {
+    DruidDataSource dataSource = new DruidDataSource();
+    dataSource.setUrl(...);
+    dataSource.setUsername(...);
+    dataSource.setPassword(...);
+    // TODO other settings if necessary in the future.
+    return dataSource;
+}
+~~~
+
+另外，SpringBoot还提供了很多其他数据访问相关的自动配置模块，比如spring-boot-starter-data-jpa、spring-boot-starter-data-mongodb等，大家可以根据自己数据访问的具体场景选择使用这些自动配置模块。
+
+> 如果选择了spring-boot-starter-data-jpa等关系数据库相关的数据访问自动配置模块，并且还需要同时依赖多个数据库，那么，也需要相应的在SpringBoot启动类中排除掉这些自动配置模块中的AutoConfiguration实现类（对应spring-boot-starter-data-jpa是JpaRepositoriesAutoConfiguration），或者标注某个DataSource为@Primary。
+
+### 4.3.1 SpringBoot应用的数据库版本化管理
+
+关于如何针对数据库的变更进行版本化管理，从Ruby On Rails的migration支持，到Java的MyBatis Migration，Flyway以及Liquibase，都给出了相应的最佳实践建议和方案，但是，从我所看到的国内业界现状，数据库migrations的实践方式并没有在国内普遍应用起来，大部分都是靠人来解决，这或许可以用一句”成熟度不够“来解释，另外一个原因或许是职能明确分工后造成的局面。
+
+如果仔细分析以上数据库migration方案就会发现，它们给出的应用场景和实践几乎都是单应用、单部署的，这在庞大单一部署单元（Monolith）的年代显然是很适合的，因为应用从开发到发布部署，再到启动，整个生命周期内，应用相关的所有”原材料“都集中在一起进行管理，而且国外开发者往往偏”特种作战“（Full-Stack Developer）,一身多能，从而数据库migration这种实践自然可以成型并广泛应用。

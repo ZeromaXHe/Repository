@@ -1,4 +1,4 @@
-package java8实战.example.chapter4;
+package 读书笔记.java8实战.example.chapter4;
 
 /**
  * Java8实战 第4章 引入流 示例源码 Fish类

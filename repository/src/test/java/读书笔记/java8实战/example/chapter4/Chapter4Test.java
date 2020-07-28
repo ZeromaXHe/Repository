@@ -1,4 +1,4 @@
-package java8实战.example.chapter4;
+package 读书笔记.java8实战.example.chapter4;
 
 import java.util.Arrays;
 import java.util.List;

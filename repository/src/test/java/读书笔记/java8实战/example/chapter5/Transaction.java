@@ -1,4 +1,4 @@
-package java8实战.example.chapter5;
+package 读书笔记.java8实战.example.chapter5;
 
 public class Transaction {
     private final Trader trader;

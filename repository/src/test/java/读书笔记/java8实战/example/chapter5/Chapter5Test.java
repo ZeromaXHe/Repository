@@ -1,9 +1,8 @@
-package java8实战.example.chapter5;
+package 读书笔记.java8实战.example.chapter5;
 
-import java8实战.example.chapter4.Dish;
+import 读书笔记.java8实战.example.chapter4.Dish;
 
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;

@@ -885,3 +885,40 @@ public DataSource dataSource2() throws Throwable {
 关于如何针对数据库的变更进行版本化管理，从Ruby On Rails的migration支持，到Java的MyBatis Migration，Flyway以及Liquibase，都给出了相应的最佳实践建议和方案，但是，从我所看到的国内业界现状，数据库migrations的实践方式并没有在国内普遍应用起来，大部分都是靠人来解决，这或许可以用一句”成熟度不够“来解释，另外一个原因或许是职能明确分工后造成的局面。
 
 如果仔细分析以上数据库migration方案就会发现，它们给出的应用场景和实践几乎都是单应用、单部署的，这在庞大单一部署单元（Monolith）的年代显然是很适合的，因为应用从开发到发布部署，再到启动，整个生命周期内，应用相关的所有”原材料“都集中在一起进行管理，而且国外开发者往往偏”特种作战“（Full-Stack Developer）,一身多能，从而数据库migration这种实践自然可以成型并广泛应用。
+
+但回到国内来看，我们往往是”集团军作战“，拼的是”大部队+明确分工“的模式，而且应用所面向的服务人数也往往更为庞大，所以，整个应用的交付链路上各个环节之间的衔接是不同的人，而应用最终部署的拓扑又往往是分布式部署居多，所以，在一个项目单元里维护数据库的migration脚本然后部署后启动前执行这些脚本就变得不合时宜了：
+
+1）从职责上，这些migration脚本虽然大部分情况下都是开发人员写，但写完之后要不要进行SQL审查，是否符合规范，这些又会涉及应用运维DBA，代码管理系统对开发来说很亲切，对DBA来说则不尽然，而且DBA往往还要一人服务多个团队多个项目，从DBA的角度来说，他更愿意将SQL集中到一处进行管理，而不是分散在各个项目中。
+
+2）应用分布式部署之后，就不单单是单一部署在应用启动的之前直接执行一次migration脚本那么简单了，你要执行多次，虽然migration方案都有版本控制，变更应该最终状态都是一样的，但这多个部署节点上都执行同一逻辑显然是多余的。更复杂一点儿，多个应用可能同时使用同一个数据库的情况（不要怀疑，遗留系统对大家来说并不陌生），一个项目的数据库migration操作跟另一个项目的数据库migration操作会不会在互不知晓的情况下产生冲突和破坏？
+
+所以，数据库migration的思路和实践很好，但不能照搬（任何事情其实皆如此），不过，我们倒是不用一棒子打死，结合现有的一些数据库migration方案，比如flyway或者liquibase，我们可以对这些数据库migration的基础设施和支持外部化（Externalize）。
+
+在这个架构中，数据库migration的版本化管理剥离到了单独的管理系统，单一项目中不再保存完整历史的migration记录，只需要提供当次发布要牵扯的数据库变更SQL。在项目发布的时候，由DBA进行统一的审查并纳入单独的数据库migration管理系统，由单独的数据库migration管理系统来管理完整的数据库migration记录，可以根据数据库的粒度进行管理和状态同步，从而既可以在开发阶段让开发人员可以集中管理数据库SQL，又能在发布期间审查SQL并同步migration状态和完整的历史记录管理。当然，这一切可以实现的前提是有一套完整的软件交付链路平台，能够从流程上，软件生命周期管理上进行统一的治理和规范，此为后话，我们将在下一章跟大家做进一步深入的探讨。
+
+不管怎么样，SpringBoot还是为大家提供了针对Flyway和Liquibase的自动配置功能（org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration和org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration）,对于单一开发和部署的应用来说，还是可以考虑的。
+
+## 4.4 spring-boot-starter-aop及其使用场景说明
+
+如今，AOP（Aspect Oriented Programming）已经不是什么崭新的概念了，在经历了代码生成、动态代理、字节码增强甚至静态编译等不同时代的洗礼之后，Java平台上的AOP方案基本上已经以SpringAOP结合AspectJ的方式稳固下来（虽然大家依然可以自己通过各种字节码工具偶尔”打造一些轮子“）。
+
+现在Spring框架提供的AOP方案倡导了一种各取所长的方案，即使用SpringAOP的面向对象的方式来编写和组织织入逻辑，并使用AspectJ的Pointcut描述语言配合Annotation来标注和指明织入点（Jointpoint）。
+
+原则上来说，我们只要引入Spring框架中AOP的相应依赖就可以直接使用Spring的AOP支持了，不过，为了进一步为大家使用SpringAOP提供便利，SpringBoot还是”不厌其烦“地为我们提供了一个spring-boot-starter-aop自动配置模块。
+
+spring-boot-starter-aop自动配置行为由两部分内容组成：
+
+1）位于spring-boot-autoconfigure的org.springframework.boot.autoconfigure.aop.AopAutoConfiguration提供@Configuration配置类和相应的配置项。
+
+2）spring-boot-starter-aop模块自身提供了针对spring-aop、aspectjrt和aspectjweaver的依赖。
+
+一般情况下，只要项目依赖中加入了spring-boot-starter-aop，其实就会自动触发AOP的关联行为，包括构建相应的AutoProxyCreator，将横切关注点织入（Weave）相应的目标对象等，不过AopAutoConfiguration依然为我们提供了可怜的两个配置项，用来有限地干预AOP相关配置：
+- spring.aop.auto = true
+- spring.aop.proxy-target-class = false
+
+对我们来说，这两个配置项的最大意义在于：允许我们投反对票，比如可以选择关闭自动的aop配置（spring.aop.auto=false），或者启用针对class而不是interface级别的aop代理（aop proxy）。
+
+AOP的应用场景很多，我们不妨以当下最热门的APM(Application Performance Monitoring)为实例场景，尝试使用spring-boot-starter-aop的支持打造一个应用性能监控的工具原型。
+
+### 4.4.1 spring-boot-starter-aop在构建spring-boot-starter-metrics自定义模块中的应用
+

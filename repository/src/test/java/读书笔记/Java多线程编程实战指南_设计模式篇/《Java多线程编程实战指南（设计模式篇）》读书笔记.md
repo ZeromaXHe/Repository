@@ -383,3 +383,125 @@ public class ThreadSafeCounter {
 
 多线程共享变量的情况下，为了保证数据一致性，往往需要对这些变量的访问进行加锁。而锁本身又会带来一些问题和开销。Immutable Object模式使得我们可以在不使用锁的情况下，既保证共享变量访问的线程安全，又能避免引入锁可能带来的问题和开销。
 
+## 3.2 Immutable Object模式的架构
+
+Immutable Object模式将现实世界中可变的实体建模为状态不可变对象，并通过创建不同的状态不可变的对象来反映实现世界实体的状态变更。
+
+## 3.3 Immutable Object模式实战案例解析
+
+## 3.4 Immutable Object模式的评价与实现考量
+
+不可变对象具有天生的线程安全性，多个线程共享一个不可变对象的时候无需使用额外的并发访问控制，这使得我们可以避免显式锁等并发访问控制的开销和问题，简化了多线程编程。
+
+Immutable Object模式特别适用于以下场景：
+
+- 被建模对象的状态变化不频繁
+- 同时对一组相关的数据进行写操作，因此需要保证原子性
+- 使用某个对象作为安全的HashMap的key
+
+Immutable Object模式实现时需要注意以下几个问题。
+
+- 被建模对象的状态变更比较频繁：此时也不见得不能使用Immutable Object模式。只是这意味着频繁创建新的不可变对象，因此会增加JVM垃圾回收（Garbage Collection）的负担和CPU消耗，我们需要综合考虑
+- 使用等效或者近似的不可变对象
+- 防御性复制
+
+## 3.5 Immutable Object模式的可复用实现代码
+
+Immutable Object模式不便于实现可复用的代码。我们需要根据实际应用具体实现。
+
+## 3.6 Java标准库实例
+
+在多线程环境中，遍历一个集合（Collection，如java.util.Vector）对象时，即便被遍历的对象本身是线程安全的，开发人员仍然不得不引入锁，以防止遍历过程中该集合的内部结构被其他线程改变（如删除或者插入了一个新的元素）而导致出错。
+
+为了保证线程安全而在遍历时对集合对象进行加锁，但这在某些情形下可能并不合适，比如系统中对该集合的插入和删除操作的频率远比遍历操作的频率要高。JDK1.5中引入的类java.util.concurrent.CopyOnWriteArrayList应用了Immutable Object模式，使得对CopyOnWriteArrayList实例进行遍历时不用加锁也能保证线程安全。当然，CopyOnWriteArrayList也不是“万能”的，它是专门针对遍历操作的频率比添加和删除操作更加频繁的场景设计的。
+
+CopyOnWriteArrayList内部维护一个名为array的实例变量用于存储集合的各个元素。
+
+## 3.7 相关模式
+
+### 3.7.1 Thread Specific Storage 模式（第10章）
+
+Immutable Object模式使得我们可以在不使用显式锁的情况下保证线程安全。Thread Specific Storage（线程特有存储）模式也可以帮我们达到相同的效果，只不过二者的具体实现方式不同。
+
+### 3.7.2 Serial Thread Confinement模式（第11章）
+
+Serial Thread Confinement模式也可以使我们在不使用显式锁的情况下保证线程安全。只不过在使用Serial Thread Confinement 模式来实现线程安全的时候，Serial Thread Confinement模式用到的队列本身实际上涉及了显式锁。因此，使用Serial Thread Confinement模式来保证线程安全实际上是试图用一种更小的锁开销去（队列所涉及的锁开销）替代另外一种可能更大的锁开销（工作者线程如果采用锁带来的开销）。
+
+# 第4章 Guarded Suspension（保护性暂挂）模式
+
+## 4.1 Guarded Suspension模式简介
+
+多线程编程中，为了提高并发性，往往将一个任务分解为不同的部分，将其交由不同的线程来执行。这些线程间相互协作时，仍然可能会出现一个线程去等待另一个线程完成一定的操作，其自身才能继续运行的情形。这好比汽车行驶过程中油量不足时，司机只好到加油站等工作人员将油加满才能继续行驶。
+
+Guarded Suspension模式可以帮助我们解决上述的等待问题。该模式的核心思想是如果某个线程执行特定的操作前需要满足一定的条件，则在该条件未满足时将该线程暂停运行（即暂挂线程，使其处于等待（WAITING）状态，直到该条件满足时才继续该线程的运行）。这里，读者可能会想到wait/notify。的确，wait/notify可以用来实现Guarded Suspension模式。但是，Guarded Suspension模式还要解决wait/notify所解决的问题之外的问题。
+
+## 4.2 Guarded Suspension模式的架构
+
+## 4.3 Guarded Suspension模式实战案例解析
+
+## 4.4 Guarded Suspension模式的评价与实现考量
+
+Guarded Suspension模式使应用程序避免了样板式代码。Guarded Suspension模式的Blocker参与者所实现的线程挂起与唤醒功能固然可以由应用代码直接使用wait/notify或者java.util.concurrent.locks.Condition来实现，但是这里面涉及几个比较容易犯错的重要技术细节（下文会提到）。这些细节如果散落在应用代码中，则会增加出错的概率。另外，应用直接编写代码来正确实现这些技术细节往往导致许多样板式代码。这不仅增加了代码编写的工作量，而且也增加了出错的概率。相反，Guarded Suspension模式的Blocker参与者封装了这些易错的技术细节，从而减少了应用代码的编写量和出错的概率。
+
+关注点分离（Separation Of Concern）。
+
+可能增加JVM垃圾回收的负担。
+
+可能增加上下文切换（Context Switch）。
+
+Blocker实现类中封装的几个易错的重要技术细节介绍如下。
+
+### 4.4.1 内存可见性和锁泄漏（Lock Leak）
+
+保护条件中涉及的变量牵涉读线程和写线程进行共享访问。保护方法的执行线程是读线程，它读取这些变量以判断保护条件是否成立。而写线程是受保护对象实例的stateChanged方法的执行线程，它会去更改这些变量的值。因此，对保护条件涉及的变量的访问应该使用锁进行保护，以保证写线程对这些变量所做的更改，读线程能够“看到”相应的值。从清单4-5的代码可以看出，这点已经被封装在Blocker实例的几个方法中了。应用代码只需要在创建Blocker实例时在其构造器中指定恰当的锁实例即可。
+
+ConditionVarBlocker类（代码见清单4-5）为了保证保护条件中涉及的变量的内存可见性而引入ReentrantLock锁。使用该锁时需要注意临界区中的代码无论是执行正常还是出现异常，进入临界区前获得的锁实例都应该被释放。否则，就会出现锁泄漏现象：锁对象被某个线程获得，但永远不会被该线程释放，导致其他线程无法获得该锁。为了避免锁泄漏，使用ReentrantLock的临界区代码总是需要按照如下格式来编写：
+
+~~~java
+//获得锁
+lock.lockInterruptibly();
+try {
+    //临界区代码
+} finally {
+    //在finally块中释放锁，保证锁总是会被释放的
+    lock.unlock();
+}
+~~~
+
+### 4.4.2 线程过早被唤醒
+
+### 4.4.3 嵌套监视器锁死
+
+## 4.5 Guarded Suspension模式的可复用实现代码
+
+## 4.6 Java标准库实例
+
+JDK1.5开始提供的阻塞队列类java.util.concurrent.LinkedBlockingQueue就使用了Guarded Suspension模式。该类的take方法用于从队列中取出一个元素。如果take方法被调用时，队列是空的，则当前线程会被阻塞；直到队列不为空时，该方法才返回一个出队列的元素。只不过LinkedBlockingQueue在实现Guarded Suspension模式时，直接使用了java.concurrent.locks.Condition。
+
+## 4.7 相关模式
+
+Guarded Suspension模式时多线程设计模式中的一个基础模式，不仅在应用程序中使用频繁，而且也有其他模式会用到它。
+
+### 4.7.1 Promise模式（第6章）
+
+Promise模式中，客户端代码调用Promise实例的getResult方法时，如果异步任务尚未执行完毕，则getResult方法会使当前线程阻塞，直到异步任务处理完毕或者出现异常。
+
+### 4.7.2 Producer-Consumer模式（第7章）
+
+Producer-Consumer模式中，当消费者线程所需的“产品”暂时没有时，消费者线程会等待直到生产者线程“生产”了新的“产品”。
+
+# 第5章 Two-phase Termination（两阶段终止）模式
+
+## 5.1 Two-phase Termination模式简介
+
+停止线程是一个目标简单而实现却不那么简单的任务。首先，Java没有提供直接的API用于停止线程。此外，停止线程还有一些额外的细节需要考虑，如待停止的线程处于阻塞（如等待锁）或者等待状态（等待其他线程）、尚有未处理完的任务等。
+
+Two-phase Termination模式通过将停止线程这个动作分解为准备阶段和执行阶段这两个阶段，提供了一种通用的用于优雅地停止线程的方法。
+
+## 5.2 Two-phase termination模式的架构
+
+## 5.3 Two-phase Termination模式实战案例解析
+
+## 5.4 Two-phase Termination模式的评价与实现考量
+
+

@@ -383,11 +383,106 @@ public class ThreadSafeCounter {
 
 多线程共享变量的情况下，为了保证数据一致性，往往需要对这些变量的访问进行加锁。而锁本身又会带来一些问题和开销。Immutable Object模式使得我们可以在不使用锁的情况下，既保证共享变量访问的线程安全，又能避免引入锁可能带来的问题和开销。
 
+多线程环境中，一个对象常常会被多个线程共享。这种情况下，如果存在多个线程并发地修改该对象地状态或者一个线程访问该对象地状态而另外一个线程试图修改该对象的状态，我们不得不做一些同步访问控制以保证数据一致性。而这些同步访问控制，如显式锁（Explicit Lock）和CAS（Compare and Swap）操作，会带来额外的开销和问题，如上下文切换，等待时间和ABA问题等。Immutable Object模式的意图是通过使用对外可见的状态不可变的对象（即Immutable Object），使得被共享对象“天生”具有线程安全性，而无需额外地同步访问控制。从而既保证了数据一致性，又避免了同步访问控制所产生的额外开销和问题，也简化了编程。
+
+所谓的状态不可变的对象，即对象一经创建，其对外可见的状态就保持不变，例如Java中的String和Integer。这点固然容易理解，但还不足以指导我们在实际工作中运用Immutable Object模式。下面我们看一个典型应用场景，一个车辆管理系统要对车辆的位置信息进行跟踪，我们可以对车辆的位置信息建立如清单3-1所示的模型。
+
+清单3-1 状态可变的位置信息模型（非线程安全）
+~~~java
+public class Location{
+    private double x;
+    private double y;
+
+    public Location (double x, double y){
+        this.x = x;
+        this.y = y;
+    }
+
+    public double getX() {
+        return x;
+    }
+    
+    public double getY() {
+        return y;
+    }
+
+    public void setXY(double x, double y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+~~~
+
+当系统接收到新的车辆坐标数据时，需要调用Location的setXY方法来更新位置信息。显然，清单3-1中的setXY是非线程安全的，因为对坐标数据x和y的写操作不是一个原子操作。setXY被调用，如果在x写入完毕，而y开始写之前有其他线程来读取位置信息，则该线程可能读到一个被追踪车辆根本不曾经过的位置。为了使setXY方法具备线程安全性，我们需要借助锁进行访问控制。虽然被追踪车辆的位置信息总是在变化，但是我们也可以将位置信息建模为状态不可变的对象，如清单3-2所示。
+
+清单3-2 状态不可变的位置信息模型
+~~~java
+public final class Location {
+    public final double x;
+    public final double y;
+
+    public Location (double x, double y) {
+        this.x = x;
+        this.y = y;
+    }
+}
+~~~
+
+使用状态不可变的位置信息模型时，如果车辆的位置发生变动，则更新车辆的位置信息时通过替换整个表示位置信息的对象（即Location实例）来实现的，如清单3-3所示。
+
+清单3-3 在使用不可变对象的情况下更新车辆的位置信息
+~~~java
+public class VehicleTracker {
+    private Map<String, Location> locMap = new ConcurrentHashMap<String, Location>();
+    
+    public void updateLocation(String vehicleId, Location newLocation) {
+        locMap.put(vehicleId, newLocation);
+    }
+}
+~~~
+
+因此，所谓状态不可变的对象并非指被建模的现实世界的状态不可变，而是我们在建模的时候的一种决策：现实世界实体的状态总是在变化的，但我们可以用状态不可变的对象来对这些实体进行建模。
+
 ## 3.2 Immutable Object模式的架构
 
 Immutable Object模式将现实世界中可变的实体建模为状态不可变对象，并通过创建不同的状态不可变的对象来反映实现世界实体的状态变更。
 
+Immutable Object模式的主要参与者有以下几种。
+
+- ImmutableObject：负责存储一组不可变状态。该参与者不对外暴露任何可以修改其状态的方法，其主要方法及职责如下。
+    - getStateX, getStateN: 这些getter方法返回其所属ImmutableObject实例所维护的状态相关变量的值。这些变量在对象实例化时通过其构造器的参数获得值。
+    - getStateSnapshot: 返回其所属ImmutableObject实例维护的一组状态的快照。
+- Manipulator：负责维护ImmutableObject所建模的现实世界实体状态的变更。当相应的现实实体状态变更时，该参与者负责生成新的ImmutableObject的实例，以反映新的状态。
+    - changeStateTo: 根据新的状态值生成新的ImmutableObject的实例。
+
+不可变对象的使用主要包括以下几种类型。
+- 获取单个状态的值：调用不可变对象的相关getter方法即可实现。
+- 获取一组状态的快照：不可变对象可以提供一个getter方法，该方法需要对其返回值做防御性复制或者返回一个只读的对象，以避免其状态对外泄露而被改变。
+- 生成新的不可变对象实例：当被建模对象的状态发生变化的时候，创建新的不可变对象实例来反映这种变化。
+
+Immutable Object模式的典型交互场景的序列图如图3-2所示。
+
+第1~4步：客户端代码获取当前ImmutableObject实例的各个状态值。
+
+第5步：客户端代码调用Manipulator的changeStateTo方法来更新应用的状态。
+
+第6、7步：changeStateTo方法创建新的ImmutableObject实例以反映应用的新状态，并返回。
+
+第8、9步：客户端代码获取新的ImmutableObject实例的状态快照。
+
+一个严格意义上不可变对象要满足以下所有条件。
+
+1. 类本身使用final修饰：防止其子类改变其定义的行为。
+2. 所有字段都是用final修饰的：使用final修饰不仅仅是从语义上说明被修饰字段的引用不可改变。更重要的是这个语义在多线程环境下由JMM（Java Memory Model）保证了被修饰字段所引用对象的初始化安全，即final修饰的字段在其他线程可见时，它必定是初始化完成的。相反，非final修饰的字段由于缺少这种保证，可能导致一个线程“看到”一个字段的时候，它还未被初始化完成，从而可能导致一些不可预料的结果。
+3. 在对象的创建过程中，this关键字没有泄露给其他类：防止其他类（如该类的内部匿名类）在对象创建过程中修改其状态。
+4. 任何字段，若其引用了其他状态可变的对象（如集合、数组等），则这些字段必须是private修饰的，并且这些字段值不能对外暴露。若有相关方法要返回这些字段值，应该进行防御性复制（Defensive Copy）。
+
 ## 3.3 Immutable Object模式实战案例解析
+
+某彩信网关系统在处理增值业务提供商（VASP， Value-Added Service Provider）下发给手机终端用户的彩信消息时，需要根据彩信接收方号码的前缀（如1381234）选择对应的彩信中心（MMSC，Multimedia Messaging Service Center），然后转发消息给选中的彩信中心，由其负责对接电信网络将彩信消息下发给手机终端用户。彩信中心相对于彩信网关系统而言，它是一个独立的部件，二者通过网络进行交互。这个选择彩信中心的过程，我们称之为路由（Routing）。而手机号前缀和彩信中心的这种对应关系，被称为路由表。路由表在软件运维过程中可能发生变化。例如，业务扩容带来的新增彩信中心、为某个号码前缀指定新的彩信中心等。虽然路由表在该系统中是由多线程共享的数据，但是这些数据的变化频率并不高。因此，即使是为了保证线程安全，我们也不希望对这些数据的访问进行加锁等并发访问控制，以免产生不必要的开销和问题。这时，Immutable Object模式就派上用场了。
+
+维护路由表可以被建模为一个不可变对象，如清单3-4所示。
+
 
 ## 3.4 Immutable Object模式的评价与实现考量
 
@@ -503,5 +598,11 @@ Two-phase Termination模式通过将停止线程这个动作分解为准备阶�
 ## 5.3 Two-phase Termination模式实战案例解析
 
 ## 5.4 Two-phase Termination模式的评价与实现考量
+
+Two-phase Termination模式使得我们可以对各种形式的目标线程进行优雅的停止。如目标线程调用了能够对interrupt方法调用做出响应的阻塞方法、目标线程调用了不能对interrupt方法调用做出响应的阻塞方法、目标线程作为消费者处理其他线程生产的“产品”在其停止前需要处理完现有“产品”等。Two-phase Termination模式实现的线程停止可能出现延迟，即客户端代码调用完ThreadOwner.shutdown后，该线程可能仍在运行。
+
+本章案例展示了一个可复用的Two-phase Termination模式实现代码。读者若要加深对该模式的理解或者自行实现该模式，需要注意以下几个问题。
+
+### 5.4.1 线程停止标志
 
 

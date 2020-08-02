@@ -483,6 +483,150 @@ Immutable Object模式的典型交互场景的序列图如图3-2所示。
 
 维护路由表可以被建模为一个不可变对象，如清单3-4所示。
 
+清单3-4 使用不可变对象维护路由表
+~~~java
+/**
+ * 彩信中心路由规则管理器
+ * 模式角色：ImmutableObject.ImmutableObject
+ */
+public final class MMSCRouter {
+    //用volatile修饰，保证多线程环境下该变量的可见性
+    private static volatile MMSCRouter instance = new MMSCRouter();
+    //维护手机号码前缀到彩信中心之间的映射关系
+    private final Map<String, MMSCInfo> routeMap;
+
+    public MMSCRouter() {
+        //将数据库表中的数据加载到内存，存为Map
+        this.routeMap = MMSCRouter.retrieveRouteMapFromDB();
+    }
+
+    private static Map<String, MMSCInfo> retrieveRouteMapFromDB() {
+        Map<String, MMSCInfo> map = new HashMap<String, MMSCInfo>();
+        //省略其他代码
+        return map;
+    }
+    
+    public static MMSCRouter getInstance() {
+        return instance;
+    }
+
+    /**
+     * 根据手机号码前缀获取对应的彩信中心信息
+     *
+     * @param msisdnPrefix 手机号码前缀
+     * @return 彩信中心信息
+     */
+    public MMSCInfo getMMSC(String msisdnPrefix) {
+        return routeMap.get(msisdnPrefix);
+    }
+
+    /**
+     * 将当前MMSCRouter的实例更新为指定的新实例
+     *
+     * @param newInstance 新的MMSCRouter实例
+     */
+    public static void setInstance(MMSCRouter newInstance) {
+        instance = newInstance;
+    }
+
+    private static Map<String, MMSCInfo> deepCopy(Map<String, MMSCInfo> m) {
+        Map<String, MMSCInfo> result = new HashMap<String, MMSCInfo>();
+        for(String key: m.keySet()){
+            result.put(key, new MMSCInfo(m.get(key)));
+        }
+        return result;
+    }
+
+    public Map<String, MMSCInfo> getRouteMap(){
+        //做防御性复制
+        return Collections.unmodifiableMap(deepCopy(routeMap));
+    }
+}
+~~~
+
+而彩信中心的相关数据，如彩信中心设备编号、URL、支持的最大附件尺寸也被建模为一个不可变对象，如清单3-5所示。
+
+清单3-5 使用不可变对象表示彩信中心信息
+~~~java
+/**
+ * 彩信中心信息
+ *
+ * 模式角色：ImmutableObject.ImmutableObject
+ */
+public final class MMSCInfo {
+    /**
+     * 设备编号
+     */
+    private final String deviceID;
+    /**
+     * 彩信中心URL
+     */
+    private final String url;
+    /**
+     * 该彩信中心允许的最大附件大小
+     */
+    private final int maxAttachmentSizeInBytes;
+
+    public MMSCInfo(String deviceID, String url, int maxAttachmentSizeInBytes){
+        this.deviceID = deviceID;
+        this.url = url;
+        this.maxAttachmentSizeInBytes = maxAttachmentSizeInBytes;
+    }
+
+    public MMSCInfo(MMSCInfo prototype) {
+        this.deviceID = prototype.deviceID;
+        this.url = prototype.url;
+        this.maxAttachmentSizeInBytes = prototype.maxAttachmentSizeInBytes;
+    }
+
+    public String getDeviceID() {
+        return deviceID;
+    }
+
+    public String getUrl() {
+        return url;
+    }
+
+    public int getMaxAttachmentSizeInBytes() {
+        return maxAttachmentSizeInBytes;
+    }
+}
+~~~
+
+彩信中心信息变更的频率也同样不高。因此，当彩信网关系统通过网络（Socket连接）被通知到这种彩信中心信息本身或者路由表变更时，网关系统会重新生成新的MMSCInfo和MMSCRouter来反映这种变更，如清单3-6所示。
+
+~~~java
+/**
+ * 与运维中心（Operation and Maintenance Center）对接的类
+ * 模式角色：ImmutableObject.Manipulator
+ */
+public class OMCAgent extends Thread {
+    @Override
+    public void run(){
+        boolean isTableModificationMsg = false;
+        String updateTableName = null;
+        while(true){
+            //省略其他代码
+            /*
+             * 从与OMC连接的Socket中读取消息并进行解析，
+             * 解析到数据表更新消息后，重置MMSCRouter实例。
+             */
+            if(isTableModificationMsg) {
+                if("MMSCInfo".equals(updateTableName)) {
+                    MMSCRouter.setInstance(new MMSCRouter());
+                }
+            }
+            //省略其他代码
+        }
+    }
+}
+~~~
+
+上述代码会调用MMSCRouter的setInstance方法来替换MMSCRouter的实例为新创建的实例。而新创建的MMSCRouter实例通过其构造器会生成多个新的MMSCInfo的实例。
+
+本案例中，MMSCInfo是一个严格意义上的不可变对象。虽然MMSCRouter对外提供了setInstance方法用于改变其静态字段instance的值，但它仍然可被视作一个等效的不可变对象。这是因为setInstance方法仅仅改变instance变量指向的对象，而instance变量采用volatile修饰保证了其在多线程之间的内存可见性，所以这意味着setInstance对instance变量的改变无须加锁也能保证线程安全。而其他代码在调用MMSCRouter的相关方法获取路由信息时也无须加锁。
+
+从图3-1的类图上看，OMCAgent类（见清单3-6）是一个Manipulator参与者实例，而MMSCInfo、MMSCRouter是一个ImmutableObject参与者实例。通过使用不可变对象，我们既可以应对路由表、彩信中心这些不是非常频繁的变更，又可以使系统中使用路由表的代码免于并发访问控制的开销和问题。
 
 ## 3.4 Immutable Object模式的评价与实现考量
 
@@ -490,15 +634,15 @@ Immutable Object模式的典型交互场景的序列图如图3-2所示。
 
 Immutable Object模式特别适用于以下场景：
 
-- 被建模对象的状态变化不频繁
-- 同时对一组相关的数据进行写操作，因此需要保证原子性
-- 使用某个对象作为安全的HashMap的key
+- 被建模对象的状态变化不频繁：正如本章案例所展示的，这种场景下可以设置一个专门的线程（Manipulator参与者所在的线程）用于在被建模对象状态变化时创建新的不可变对象。而其他线程则只是读取不可变对象的状态。此场景下的一个小技巧是Manipulator对不可变对象的引用采用volatile关键字修饰，既可以避免使用显式锁（如synchronized），又可以保证多线程间的内存可见性。
+- 同时对一组相关的数据进行写操作，因此需要保证原子性：此场景为了保证操作的原子性，通常的做法是使用显式锁。但若采用Immutable Object模式，将这一组相关的数据“组合”成一个不可变对象，则对这一组数据的操作就可以无需加显式锁也能保证原子性，这既简化了编程，又提高了代码运行效率。本章开头所举的车辆位置跟踪的例子正是这种场景。
+- 使用某个对象作为安全的HashMap的key：我们知道，一个对象作为HashMap的Key被“放入”HashMap之后，若该对象状态变化导致了其Hash Code的变化，则会导致后面在同样的对象作为Key去get的时候无法获取关联的值，尽管该HashMap中的确存在以该对象为Key的条目。相反，由于不可变对象的状态不变，因此其Hash Code也不变。这使得不可变对象非常适于用作HashMap的Key。
 
 Immutable Object模式实现时需要注意以下几个问题。
 
-- 被建模对象的状态变更比较频繁：此时也不见得不能使用Immutable Object模式。只是这意味着频繁创建新的不可变对象，因此会增加JVM垃圾回收（Garbage Collection）的负担和CPU消耗，我们需要综合考虑
-- 使用等效或者近似的不可变对象
-- 防御性复制
+- 被建模对象的状态变更比较频繁：此时也不见得不能使用Immutable Object模式。只是这意味着频繁创建新的不可变对象，因此会增加JVM垃圾回收（Garbage Collection）的负担和CPU消耗，我们需要综合考虑：被建模对象的规模、代码目标运行环境的JVM内存分配情况、系统对吞吐率和响应性的要求。若这几个方面因素综合考虑都能满足要求，那么使用不可变对象建模也未尝不可。
+- 使用等效或者近似的不可变对象：有时创建严格意义上的不可变对象比较难，但是尽量向严格意义上的不可变对象靠拢也有利于发挥不可变对象的好处。
+- 防御性复制：如果不可变对象本身包含一些状态需要对外暴露，而相应的字段本身又是可变的（如HashMap），那么返回这些字段的方法还是需要做防御性复制，以避免外部代码修改了其内部状态。正如清单3-4的代码中的getRouteMap方法所展示的。
 
 ## 3.5 Immutable Object模式的可复用实现代码
 
@@ -506,9 +650,26 @@ Immutable Object模式不便于实现可复用的代码。我们需要根据实�
 
 ## 3.6 Java标准库实例
 
-在多线程环境中，遍历一个集合（Collection，如java.util.Vector）对象时，即便被遍历的对象本身是线程安全的，开发人员仍然不得不引入锁，以防止遍历过程中该集合的内部结构被其他线程改变（如删除或者插入了一个新的元素）而导致出错。
+在多线程环境中，遍历一个集合（Collection，如java.util.Vector）对象时，即便被遍历的对象本身是线程安全的，开发人员仍然不得不引入锁，以防止遍历过程中该集合的内部结构被其他线程改变（如删除或者插入了一个新的元素）而导致出错，如清单3-7所示。
 
-为了保证线程安全而在遍历时对集合对象进行加锁，但这在某些情形下可能并不合适，比如系统中对该集合的插入和删除操作的频率远比遍历操作的频率要高。JDK1.5中引入的类java.util.concurrent.CopyOnWriteArrayList应用了Immutable Object模式，使得对CopyOnWriteArrayList实例进行遍历时不用加锁也能保证线程安全。当然，CopyOnWriteArrayList也不是“万能”的，它是专门针对遍历操作的频率比添加和删除操作更加频繁的场景设计的。
+清单3-7 遍历线程安全的集合时加锁
+~~~java
+Vector vector = null;
+
+//此处以vector本身为锁，防止遍历过程中的其他线程改变其内部结构
+synchronized (vector) {
+    for(int i = 0; i < vector.size(); i++){
+        doSomethingWith(vector.get(i));
+    }
+}
+~~~
+
+为了保证线程安全而在遍历时对集合对象进行加锁，但这在某些情形下可能并不合适，比如系统中对该集合的插入和删除操作的频率远比遍历操作的频率要高。JDK1.5中引入的类java.util.concurrent.CopyOnWriteArrayList应用了Immutable Object模式，使得对CopyOnWriteArrayList实例进行遍历时不用加锁也能保证线程安全。当然，CopyOnWriteArrayList也不是“万能”的，它是专门针对遍历操作的频率比添加和删除操作更加频繁的场景设计的。CopyOnWriteArrayList的源码（骨架）如清单3-8所示。
+
+清单3-8 JDK类CopyOnWriteArrayList的源码（骨架）
+~~~java
+
+~~~
 
 CopyOnWriteArrayList内部维护一个名为array的实例变量用于存储集合的各个元素。
 
